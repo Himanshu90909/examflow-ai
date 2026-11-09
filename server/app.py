@@ -8,7 +8,7 @@ import re
 import sys
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, quote
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -16,6 +16,7 @@ import db
 import auth
 import api
 import persistence
+import google_auth
 import solver_service
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -34,6 +35,18 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         if os.environ.get("EXAMFLOW_QUIET") != "1":
             sys.stderr.write("%s - %s\n" % (self.address_string(), fmt % args))
+
+    def _redirect(self, location):
+        self.send_response(302)
+        self.send_header("Location", location)
+        self.send_header("Content-Length", "0")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+
+    def _origin(self):
+        proto = self.headers.get("X-Forwarded-Proto") or "http"
+        host = self.headers.get("Host") or "localhost:8000"
+        return "%s://%s" % (proto, host)
 
     def _redirect(self, location):
         self.send_response(302)
@@ -88,25 +101,82 @@ class Handler(BaseHTTPRequestHandler):
 
         conn = db.connect()
         try:
+            if method == "GET" and path == "/api/auth/providers":
+                return self._send(200, {"password": True, "google": google_auth.ENABLED})
+
+            if method == "GET" and path == "/api/auth/google/start":
+                if not google_auth.ENABLED:
+                    return self._redirect("/?google_error=not_configured#/login")
+                portal = (query.get("portal") or "user").strip().lower()
+                redirect_uri = self._origin() + "/api/auth/google/callback"
+                state = google_auth.sign_state(redirect_uri + "|" + portal)
+                return self._redirect(google_auth.authorize_url(redirect_uri, state))
+
+            if method == "GET" and path == "/api/auth/google/callback":
+                if query.get("error"):
+                    return self._redirect("/?google_error=cancelled#/login")
+                try:
+                    redirect_uri, portal = (google_auth.read_state(query.get("state") or "")
+                                            or ("", "")).split("|")
+                except ValueError:
+                    redirect_uri, portal = "", ""
+                if not redirect_uri:
+                    return self._redirect("/?google_error=expired#/login")
+                try:
+                    profile = google_auth.exchange_code(query.get("code") or "", redirect_uri)
+                except google_auth.GoogleAuthError:
+                    return self._redirect("/?google_error=google#/login")
+
+                row = conn.execute("SELECT * FROM users WHERE LOWER(email) = ?",
+                                   (profile["email"],)).fetchone()
+                if row is None:
+                    if portal != "student":
+                        return self._redirect("/?google_error=no_account#/login/student")
+                    conn.execute(
+                        """INSERT INTO users (id, full_name, email, password_hash, role,
+                                              school_id, department_id, student_group_id,
+                                              is_active, created_at)
+                           VALUES (?,?,?,?,?,NULL,NULL,NULL,1,?)""",
+                        (db.new_id(), profile["name"], profile["email"],
+                         auth.hash_password(db.new_id() + db.new_id()), "Student", db.now_iso()))
+                    conn.commit()
+                    row = conn.execute("SELECT * FROM users WHERE LOWER(email) = ?",
+                                       (profile["email"],)).fetchone()
+
+                user = db.decode_row("users", row)
+                if not user.get("is_active", 1):
+                    return self._redirect("/?google_error=inactive#/login")
+                allowed = {"admin": ("Super Admin", "School Admin"),
+                           "user": ("Invigilator",),
+                           "student": ("Student",)}.get(portal, ())
+                if allowed and user["role"] not in allowed:
+                    return self._redirect("/?google_error=wrong_portal#/login/%s" % portal)
+
+                db.audit(conn, user, "User login (Google)", "user", user["id"])
+                conn.commit()
+                return self._redirect("/#google_token=" + quote(auth.make_token(user)))
+
             if method == "POST" and path == "/api/auth/login":
                 body = self._json_body()
                 portal = (body.get("portal") or "").strip().lower()
                 user = auth.authenticate(body.get("email") or "", body.get("password") or "")
                 if not user:
                     raise auth.Unauthorized("Email or password is incorrect.")
-                is_admin = user["role"] in ("Super Admin", "School Admin")
-                if portal == "admin" and not is_admin:
-                    db.audit(conn, user, "Blocked sign-in (administrator portal)", "user", user["id"],
-                             "Invigilator attempted the administrator portal")
+                allowed_roles = {"admin": ("Super Admin", "School Admin"),
+                                 "user": ("Invigilator",),
+                                 "student": ("Student",)}.get(portal)
+                if allowed_roles and user["role"] not in allowed_roles:
+                    db.audit(conn, user, "Blocked sign-in (wrong portal)", "user", user["id"],
+                             "Tried the %s portal as %s" % (portal, user["role"]))
                     conn.commit()
+                    if portal == "admin":
+                        raise auth.Unauthorized(
+                            "This is the administrator portal. Invigilators and students sign in from their own portal.")
+                    if portal == "student":
+                        raise auth.Unauthorized(
+                            "This is the student portal. Staff sign in from the administrator or invigilator portal.")
                     raise auth.Unauthorized(
-                        "This is the administrator portal. Invigilators sign in from the invigilator portal.")
-                if portal == "user" and is_admin:
-                    db.audit(conn, user, "Blocked sign-in (invigilator portal)", "user", user["id"],
-                             "Administrator attempted the invigilator portal")
-                    conn.commit()
-                    raise auth.Unauthorized(
-                        "This is the invigilator portal. Administrators sign in from the admin portal.")
+                        "This is the invigilator portal. Administrators and students sign in from their own portal.")
                 db.audit(conn, user, "User login", "user", user["id"],
                          "Portal: %s" % (portal or "default"))
                 conn.commit()
@@ -126,6 +196,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, api.dashboard(conn, user))
             if path == "/api/my-duties":
                 return self._send(200, api.my_duties(conn, user))
+            if path == "/api/my-exams":
+                return self._send(200, api.my_exams(conn, user))
             if method == "POST" and path == "/api/my-duties/report-issue":
                 return self._send(200, api.report_availability_issue(conn, user, self._json_body()))
 

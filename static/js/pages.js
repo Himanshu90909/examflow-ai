@@ -846,3 +846,59 @@
 
   App.pagesReady = true;
 })();
+
+  /* ---------------------------------------------------------------- my exams */
+  route({
+    id: 'my-exams',
+    title: 'My Exams',
+    render: async (view) => {
+      view.appendChild(pageHead('My exams', 'Your own examination schedule: dates, sessions and rooms.'));
+      view.appendChild(loadingBlock('Loading your schedule'));
+      let data;
+      try { data = await api('/api/my-exams'); } catch (err) {
+        view.innerHTML = '';
+        view.appendChild(h('div', { class: 'alert err', text: err.message }));
+        return;
+      }
+      view.innerHTML = '';
+      view.appendChild(pageHead('My exams', 'Your own examination schedule: dates, sessions and rooms.'));
+
+      if (!data.group) {
+        view.appendChild(h('div', { class: 'alert warn', text: 'Your account is not linked to a student group yet. Ask the examination office to add you to your batch.' }));
+        return;
+      }
+      const exams = data.exams || [];
+      const scheduled = exams.filter((e) => e.scheduled);
+      const next = scheduled[0];
+      const published = data.run && ['Published', 'Approved'].includes(data.run.status);
+
+      view.appendChild(h('div', { class: 'grid kpi' },
+        kpi('Student', data.student ? data.student.name : '-', data.group.group_name),
+        kpi('Papers', exams.length, `${scheduled.length} scheduled`),
+        kpi('Next exam', next ? fmtDate(next.examination_date) : '-', next ? `${next.start_time} · ${next.subject_code}` : 'Not published yet'),
+        kpi('Timetable', published ? 'Published' : 'Draft', data.run ? data.run.run_name : 'No run yet')));
+
+      if (!published) {
+        view.appendChild(h('div', { class: 'alert warn mt16', text: 'The examination office has not published this timetable yet, so dates may still change.' }));
+      }
+
+      view.appendChild(h('div', { class: 'mt16' }, card('My examination schedule',
+        dataTable({
+          columns: [
+            { key: 'examination_date', label: 'Date', render: (r) => (r.examination_date ? fmtDate(r.examination_date) : 'Not scheduled') },
+            { key: 'session', label: 'Session', render: (r) => (r.start_time ? `${r.start_time}-${r.end_time}` : '-') },
+            { key: 'subject_code', label: 'Code', render: (r) => h('b', { text: r.subject_code }) },
+            { key: 'subject_name', label: 'Paper' },
+            { key: 'room', label: 'Room', render: (r) => (r.room ? `${r.room}${r.building ? ' · ' + r.building : ''}` : 'Assigning') },
+            { key: 'seats', label: 'Seats', render: (r) => (r.seats ? String(r.seats) : '-') },
+            { key: 'duration_minutes', label: 'Duration', render: (r) => `${r.duration_minutes} min` },
+          ],
+          rows: exams,
+          empty: 'No papers have been scheduled for your group yet.',
+        }))));
+
+      view.appendChild(h('div', { class: 'mt16' }, card('Important',
+        h('div', { class: 'muted small', text: 'Report to the room 15 minutes before the session starts with your identity card. If a paper is not scheduled yet, the examination office will publish it shortly.' }))));
+    },
+  });
+

@@ -16,7 +16,7 @@ import db
 SECRET = os.environ.get("EXAMFLOW_SECRET", "examflow-dev-secret-change-in-production")
 TOKEN_TTL_SECONDS = 12 * 60 * 60
 
-ROLES = ("Super Admin", "School Admin", "Invigilator")
+ROLES = ("Super Admin", "School Admin", "Invigilator", "Student")
 
 PERMISSIONS = {
     "schools": (("Super Admin", "School Admin"), ("Super Admin",)),
@@ -32,7 +32,9 @@ PERMISSIONS = {
     "audit-logs": (("Super Admin", "School Admin"), ()),
     "conflicts": (("Super Admin", "School Admin"), ("Super Admin", "School Admin")),
     "runs": (("Super Admin", "School Admin", "Invigilator"), ("Super Admin", "School Admin")),
-    "notifications": (("Super Admin", "School Admin", "Invigilator"), ("Super Admin", "School Admin", "Invigilator")),
+    "notifications": (("Super Admin", "School Admin", "Invigilator", "Student"),
+                      ("Super Admin", "School Admin", "Invigilator")),
+    "my-exams": (("Student",), ()),
 }
 
 

@@ -31,6 +31,7 @@
   const NAV = [
     ['Overview', [
       { id: 'dashboard', label: 'Dashboard', icon: 'dashboard', role: ['Super Admin', 'School Admin', 'Invigilator'] },
+      { id: 'my-exams', label: 'My Exams', icon: 'file', role: ['Student'] },
     ]],
     ['Institution', [
       { id: 'schools', label: 'Schools', icon: 'school', role: ['Super Admin'] },
@@ -591,7 +592,10 @@
   }
 
   function homeRoute() {
-    return App.state.user && App.state.user.role === 'Invigilator' ? 'my-duties' : 'dashboard';
+    const role = App.state.user && App.state.user.role;
+    if (role === 'Invigilator') return 'my-duties';
+    if (role === 'Student') return 'my-exams';
+    return 'dashboard';
   }
 
   async function renderRoute() {
@@ -648,12 +652,25 @@
       otherHref: '#/login/admin',
       otherText: 'Administrator? Open the admin portal',
     },
+    student: {
+      key: 'student',
+      badge: 'Student',
+      heading: 'Student sign in',
+      intro: 'See when and where your examinations are held, and which seat block to report to.',
+      demo: [['Student', 'student@examflow.ai', 'Student@123']],
+      points: ['Only your own subjects and groups',
+               'Date, session, room and seat count for each paper',
+               'No access to rosters, invigilation or scheduling'],
+      otherHref: '#/login/user',
+      otherText: 'Invigilator or staff? Open the staff portals',
+    },
   };
 
   function loginPortal() {
     const hash = location.hash || '';
     if (hash.indexOf('#/login/user') === 0) return 'user';
     if (hash.indexOf('#/login/admin') === 0) return 'admin';
+    if (hash.indexOf('#/login/student') === 0) return 'student';
     return 'chooser';
   }
 
@@ -691,7 +708,42 @@
           err,
           h('div', { class: 'portal-grid' },
             portalCard('admin', 'Administrator portal', 'Super Admin · School Admin', 'Plan, validate and publish timetables.'),
-            portalCard('user', 'Invigilator portal', 'Invigilator', 'See your duties and report issues.'))))));
+            portalCard('user', 'Invigilator portal', 'Invigilator', 'See your duties and report issues.'),
+            portalCard('student', 'Student portal', 'Student', 'Check your examination dates and rooms.'))))));
+  }
+
+  const GOOGLE_ERRORS = {
+    cancelled: 'Google sign-in was cancelled.',
+    expired: 'That sign-in attempt expired. Please try again.',
+    google: 'Google could not confirm that account. Please try again.',
+    no_account: 'No ExamFlow account uses that Google address. Ask the examination office to create one.',
+    inactive: 'This account is deactivated. Contact the examination office.',
+    wrong_portal: 'That Google account belongs to a different portal. Use the correct sign-in page.',
+    not_configured: 'Google sign-in is not configured on this deployment yet.',
+  };
+
+  function loadGoogleButton(slot, portal) {
+    fetch('/api/auth/providers')
+      .then((response) => (response.ok ? response.json() : { google: false }))
+      .then((providers) => {
+        if (!providers || !providers.google) return;
+        slot.appendChild(h('div', { class: 'auth-divider', text: 'or' }));
+        slot.appendChild(h('a', {
+          class: 'btn ghost block google-btn',
+          href: '/api/auth/google/start?portal=' + portal,
+        }, h('span', { class: 'google-g', text: 'G' }), 'Continue with Google'));
+      })
+      .catch(() => {});
+  }
+
+  function takeGoogleToken() {
+    const hash = location.hash || '';
+    const marker = '#google_token=';
+    if (hash.indexOf(marker) !== 0) return false;
+    App.state.token = decodeURIComponent(hash.slice(marker.length));
+    localStorage.setItem('examflow_token', App.state.token);
+    history.replaceState(null, '', location.pathname + location.search + '#/login');
+    return true;
   }
 
   function portalCard(portal, title, subtitle, text) {
@@ -719,6 +771,7 @@
       field('Email address', email),
       field('Password', password),
       submit,
+      googleSlot,
       h('a', { class: 'portal-switch', href: cfg.otherHref, text: cfg.otherText }),
       h('div', { class: 'demo-box' },
         h('div', { style: 'margin-bottom:6px;font-weight:600;color:#334155', text: 'Demonstration accounts' }),
@@ -798,13 +851,14 @@
     }
     const onLoginPage = (location.hash || '').indexOf('#/login') === 0;
     if (!location.hash || onLoginPage) {
-      location.hash = App.state.user.role === 'Invigilator' ? '#/my-duties' : '#/dashboard';
+      location.hash = '#/' + homeRoute();
     }
     buildShell();
     await renderRoute();
   }
 
   async function boot() {
+    takeGoogleToken();
     window.addEventListener('hashchange', () => {
       if (App.state.user) renderRoute();
       else renderLogin();

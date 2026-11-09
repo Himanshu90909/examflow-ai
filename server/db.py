@@ -276,6 +276,43 @@ def connect() -> sqlite3.Connection:
     return conn
 
 
+def _ensure_user_columns() -> None:
+    """Additive migrations for columns added after the first release."""
+    conn = connect()
+    try:
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+        if "student_group_id" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN student_group_id TEXT")
+            conn.commit()
+    finally:
+        conn.close()
+
+
+def ensure_student_accounts() -> int:
+    """Create one demo student login per seeded group (idempotent)."""
+    import auth
+    conn = connect()
+    added = 0
+    try:
+        groups = conn.execute("SELECT * FROM student_groups ORDER BY group_name LIMIT 3").fetchall()
+        names = ["Rohit Verma", "Sneha Iyer", "Aditya Bose"]
+        for index, group in enumerate(groups):
+            email = "student%s@examflow.ai" % ("" if index == 0 else index + 1)
+            if conn.execute("SELECT 1 FROM users WHERE LOWER(email) = LOWER(?)", (email,)).fetchone():
+                continue
+            conn.execute(
+                """INSERT INTO users (id, full_name, email, password_hash, role, school_id,
+                                      department_id, student_group_id, is_active, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,1,?)""",
+                (new_id(), names[min(index, 2)], email, auth.hash_password("Student@123"),
+                 "Student", group["school_id"], group["department_id"], group["id"], now_iso()))
+            added += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return added
+
+
 def init_db(seed: bool = True) -> None:
     import persistence
     persistence.ensure_restored()
@@ -287,7 +324,10 @@ def init_db(seed: bool = True) -> None:
     if seed and fresh:
         from seed import seed_database
         seed_database()
-    if link_invigilator_accounts():
+    _ensure_user_columns()
+    changed = link_invigilator_accounts()
+    changed += ensure_student_accounts()
+    if changed:
         import persistence
         persistence.save_now()
 

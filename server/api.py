@@ -459,12 +459,22 @@ def meta(conn, user):
         "SELECT * FROM constraint_policies ORDER BY constraint_type DESC, policy_name").fetchall()]
     slots = [db.decode_row("time_slots", r) for r in conn.execute(
         "SELECT * FROM time_slots ORDER BY examination_date, start_time").fetchall()]
+    if user["role"] == "Student":
+        # a student only sees their own programme: own group, own subjects, own school
+        own_group = user.get("student_group_id")
+        groups = [g for g in groups if g["id"] == own_group]
+        exams = [e for e in exams if e["id"] in {
+            x["id"] for x in (db.decode_row("examinations", r) for r in conn.execute(
+                "SELECT * FROM examinations").fetchall())
+            if own_group in (x.get("student_group_ids") or [])}]
+        rooms, invs, policies, slots = [], [], [], []
+
     return {
         "schools": schools, "departments": depts, "groups": groups, "rooms": rooms,
         "invigilators": invs, "examinations": exams, "policies": policies,
         "slots": slots, "sessions": ["2026-27", "2027-28"],
         "priorities": ["Critical", "High", "Medium", "Low"],
-        "roles": ["Super Admin", "School Admin", "Invigilator"],
+        "roles": ["Super Admin", "School Admin", "Invigilator", "Student"],
         "algorithms": [{"key": k, "name": v} for k, v in solver_service.ALGORITHMS.items()],
         "cpsat": {"available": False, "note": "OR-Tools CP-SAT is not installed in this deployment. "
                                               "The CSP engine runs locally; a FastAPI solver can be "
@@ -705,6 +715,68 @@ def report_csv(conn, user, kind, params):
 
 
 # ------------------------------------------------------------- invigilator API
+def live_run(conn):
+    """The published timetable if there is one, otherwise the newest generated run."""
+    row = conn.execute(
+        "SELECT * FROM scheduling_runs WHERE status IN ('Published', 'Approved') "
+        "ORDER BY created_at DESC LIMIT 1").fetchone()
+    if not row:
+        row = conn.execute(
+            "SELECT * FROM scheduling_runs ORDER BY created_at DESC LIMIT 1").fetchone()
+    return db.decode_row("scheduling_runs", row) if row else None
+
+
+def my_exams(conn, user):
+    """A student's own examination schedule: only the groups they belong to."""
+    group_id = user.get("student_group_id")
+    if not group_id:
+        return {"student": None, "group": None, "school": None, "run": None, "exams": []}
+    group_row = conn.execute("SELECT * FROM student_groups WHERE id = ?", (group_id,)).fetchone()
+    if not group_row:
+        return {"student": None, "group": None, "school": None, "run": None, "exams": []}
+    group = db.decode_row("student_groups", group_row)
+    school_row = conn.execute("SELECT * FROM schools WHERE id = ?", (group["school_id"],)).fetchone()
+    school = db.decode_row("schools", school_row) if school_row else None
+
+    exams = [db.decode_row("examinations", r) for r in conn.execute(
+        "SELECT * FROM examinations ORDER BY subject_name").fetchall()]
+    mine = [e for e in exams if group_id in (e.get("student_group_ids") or [])]
+
+    run = live_run(conn)
+    placements = {}
+    if run:
+        for row in conn.execute(
+                """SELECT sa.examination_id, sa.examination_date, sa.start_time, sa.end_time,
+                          r.room_number, r.capacity, r.building
+                   FROM schedule_assignments sa
+                   LEFT JOIN rooms r ON r.id = sa.room_id
+                   WHERE sa.scheduling_run_id = ?""", (run["id"],)).fetchall():
+            placements[row["examination_id"]] = dict(row)
+
+    out = []
+    for exam in mine:
+        placed = placements.get(exam["id"]) or {}
+        out.append({
+            "id": exam["id"],
+            "subject_name": exam["subject_name"],
+            "subject_code": exam["subject_code"],
+            "examination_type": exam.get("examination_type"),
+            "duration_minutes": exam["duration_minutes"],
+            "examination_date": placed.get("examination_date"),
+            "start_time": placed.get("start_time"),
+            "end_time": placed.get("end_time"),
+            "room": placed.get("room_number"),
+            "building": placed.get("building"),
+            "seats": placed.get("capacity"),
+            "scheduled": bool(placed.get("examination_date")),
+        })
+    out.sort(key=lambda e: (e["examination_date"] or "9999", e["start_time"] or "", e["subject_code"]))
+    return {"student": {"name": user["full_name"], "email": user["email"]},
+            "group": group, "school": school,
+            "run": {"id": run["id"], "run_name": run["run_name"], "status": run["status"]} if run else None,
+            "exams": out}
+
+
 def my_duties(conn, user):
     inv = conn.execute("SELECT * FROM invigilators WHERE user_id=?", (user["id"],)).fetchone()
     if not inv:
