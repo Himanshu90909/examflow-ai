@@ -603,26 +603,109 @@
   }
 
   /* ------------------------------------------------------------------- auth */
+  const PORTALS = {
+    admin: {
+      badge: 'Administrator',
+      heading: 'Administrator sign in',
+      intro: 'Plan examinations, allocate rooms and invigilators, then publish approved timetables.',
+      lead: 'The timetable office, end to end.',
+      body: 'Build a conflict-free plan, inspect the solver reasoning and release it only when every hard rule passes.',
+      points: ['CSP search with MRV, degree and LCV heuristics',
+               'Backtracking with forward checking, never random',
+               'Publishing blocked until the rule engine passes'],
+      demo: [['Super Admin', 'admin@examflow.ai', 'Admin@123'],
+             ['School Admin', 'rita@examflow.ai', 'Examflow@123']],
+      otherHref: '#/login/user',
+      otherText: 'Invigilator? Open the invigilator portal',
+    },
+    user: {
+      badge: 'Invigilator',
+      heading: 'Invigilator sign in',
+      intro: 'Check your duty roster and room allocation, and report availability problems to the exam office.',
+      lead: 'Your duties, clearly laid out.',
+      body: 'Only the duties assigned to you, with room, session and seat count for each examination.',
+      points: ['Published duties for your own account only',
+               'Room, session and student count for every duty',
+               'Report a clash or availability issue in one click'],
+      demo: [['Invigilator', 'ananya@examflow.ai', 'Examflow@123']],
+      otherHref: '#/login/admin',
+      otherText: 'Administrator? Open the admin portal',
+    },
+  };
+
+  function loginPortal() {
+    const hash = location.hash || '';
+    if (hash.indexOf('#/login/user') === 0) return 'user';
+    if (hash.indexOf('#/login/admin') === 0) return 'admin';
+    return 'chooser';
+  }
+
+  function brandHead() {
+    return h('div', { class: 'brand', style: 'padding:0;border:0' },
+      h('div', { class: 'brand-mark', text: 'E' }),
+      h('div', null, h('div', { class: 'brand-name', text: 'ExamFlow AI' }),
+        h('div', { class: 'brand-sub', text: 'Multi-school examination planning' })));
+  }
+
   function renderLogin(message) {
+    if (loginPortal() === 'chooser') return renderPortalChooser(message);
+    return renderPortalLogin(loginPortal(), message);
+  }
+
+  function renderPortalChooser(message) {
+    const root = document.getElementById('root');
+    const err = h('div', { class: 'alert err', style: message ? 'display:flex' : 'display:none', text: message || '' });
+    root.innerHTML = '';
+    root.appendChild(h('div', { class: 'login' },
+      h('div', { class: 'login-aside' },
+        brandHead(),
+        h('h2', { text: 'Two portals, one examination plan.' }),
+        h('p', { text: 'Administrators build and publish the timetable. Invigilators follow their duties. Each portal has its own sign-in page and its own view of the data.' }),
+        h('div', { class: 'login-points' },
+          point('Separate sign-in pages for administration and staff'),
+          point('Role separation enforced on the server, not just the menu'),
+          point('Every decision stored for audit')),
+        h('div', { class: 'small', style: 'margin-top:auto;color:#94a3b8', text: 'Demonstration build · fictional data' })),
+      h('div', { class: 'login-form-wrap' },
+        h('div', { class: 'login-form' },
+          h('h1', { text: 'Choose your portal' }),
+          h('p', { class: 'muted small', style: 'margin-bottom:16px', text: 'Sign in where you belong. Credentials are refused on the wrong portal.' }),
+          err,
+          h('div', { class: 'portal-grid' },
+            portalCard('admin', 'Administrator portal', 'Super Admin · School Admin', 'Plan, validate and publish timetables.'),
+            portalCard('user', 'Invigilator portal', 'Invigilator', 'See your duties and report issues.'))))));
+  }
+
+  function portalCard(portal, title, subtitle, text) {
+    return h('a', { class: 'portal-card ' + portal, href: '#/login/' + portal },
+      h('div', { class: 'portal-icon', text: portal === 'admin' ? '\u25C6' : '\u25CF' }),
+      h('div', { class: 'portal-copy' },
+        h('div', { class: 'portal-title', text: title }),
+        h('div', { class: 'portal-sub', text: subtitle }),
+        h('div', { class: 'portal-text', text: text })),
+      h('span', { class: 'portal-go', text: '\u2192' }));
+  }
+
+  function renderPortalLogin(portal, message) {
+    const cfg = PORTALS[portal];
     const root = document.getElementById('root');
     const email = inputEl({ type: 'email', placeholder: 'you@university.edu', autocomplete: 'username' });
-    const password = inputEl({ type: 'password', placeholder: '••••••••', autocomplete: 'current-password' });
-    const error = h('div', { class: 'alert err', style: 'display:none' });
+    const password = inputEl({ type: 'password', placeholder: '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022', autocomplete: 'current-password' });
+    const error = h('div', { class: 'alert err', style: message ? 'display:flex' : 'display:none', text: message || '' });
     const submit = h('button', { class: 'btn block', style: 'margin-top:6px', text: 'Sign in' });
     const form = h('form', { class: 'login-form' },
-      h('h1', { text: 'Welcome back' }),
-      h('p', { class: 'muted small', style: 'margin-bottom:18px', text: 'Sign in to manage examinations, rooms and invigilation duties.' }),
+      h('div', { class: 'portal-badge ' + portal, text: cfg.badge + ' portal' }),
+      h('h1', { text: cfg.heading }),
+      h('p', { class: 'muted small', style: 'margin-bottom:18px', text: cfg.intro }),
       error,
       field('Email address', email),
       field('Password', password),
       submit,
+      h('a', { class: 'portal-switch', href: cfg.otherHref, text: cfg.otherText }),
       h('div', { class: 'demo-box' },
         h('div', { style: 'margin-bottom:6px;font-weight:600;color:#334155', text: 'Demonstration accounts' }),
-        h('div', null,
-          demoChip('Super Admin', 'admin@examflow.ai', 'Admin@123', email, password),
-          demoChip('School Admin', 'rita@examflow.ai', 'Examflow@123', email, password),
-          demoChip('Invigilator', 'ananya@examflow.ai', 'Examflow@123', email, password)),
-        h('div', { style: 'margin-top:8px', text: 'Seeded demonstration data — fictional schools and faculty.' })));
+        h('div', null, cfg.demo.map((row) => demoChip(row[0], row[1], row[2], email, password))),
+        h('div', { style: 'margin-top:8px', text: 'Seeded demonstration data \u2014 fictional schools and faculty.' })));
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -630,7 +713,10 @@
       submit.disabled = true;
       submit.innerHTML = '<span class="spinner"></span> Signing in';
       try {
-        const data = await api('/api/auth/login', { method: 'POST', body: { email: email.value.trim(), password: password.value } });
+        const data = await api('/api/auth/login', {
+          method: 'POST',
+          body: { email: email.value.trim(), password: password.value, portal: portal },
+        });
         App.state.token = data.token;
         App.state.user = data.user;
         localStorage.setItem('examflow_token', data.token);
@@ -646,28 +732,21 @@
     root.innerHTML = '';
     root.appendChild(h('div', { class: 'login' },
       h('div', { class: 'login-aside' },
-        h('div', { class: 'brand', style: 'padding:0;border:0' },
-          h('div', { class: 'brand-mark', text: 'E' }),
-          h('div', null, h('div', { class: 'brand-name', text: 'ExamFlow AI' }),
-            h('div', { class: 'brand-sub', text: 'Multi-school examination planning' }))),
-        h('h2', { text: 'Conflict-free timetables, fair invigilation duties.' }),
-        h('p', { text: 'A constraint solver builds the schedule, then an independent validator checks every hard rule before anything is published.' }),
-        h('div', { class: 'login-points' },
-          point('CSP search with MRV, degree and LCV heuristics'),
-          point('Backtracking with forward checking, never random'),
-          point('Workload fairness scored and compared against First-Fit'),
-          point('Explainable decisions stored for every examination')),
-        h('div', { class: 'small', style: 'margin-top:auto;color:#94a3b8', text: message || 'Demonstration build · fictional data' })),
+        brandHead(),
+        h('h2', { text: cfg.lead }),
+        h('p', { text: cfg.body }),
+        h('div', { class: 'login-points' }, cfg.points.map(point)),
+        h('div', { class: 'small', style: 'margin-top:auto;color:#94a3b8', text: 'Demonstration build \u00b7 fictional data' })),
       h('div', { class: 'login-form-wrap' }, form)));
   }
 
   function point(text) {
-    return h('div', { class: 'login-point' }, h('span', { class: 'tick', text: '✓' }), h('span', null, h('b', { text: text.split(' ').slice(0, 2).join(' ') }), ` ${text.split(' ').slice(2).join(' ')}`));
+    return h('div', { class: 'login-point' }, h('span', { class: 'tick', text: '\u2713' }), h('span', null, h('b', { text: text.split(' ').slice(0, 2).join(' ') }), ' ' + text.split(' ').slice(2).join(' ')));
   }
 
   function demoChip(label, mail, pass, emailEl, passEl) {
     return h('button', {
-      type: 'button', class: 'demo-chip', text: `${label} · ${mail}`,
+      type: 'button', class: 'demo-chip', text: label + ' \u00b7 ' + mail,
       onclick: () => { emailEl.value = mail; passEl.value = pass; },
     });
   }
@@ -680,6 +759,7 @@
     App.state.user = null;
     App.state.meta = null;
     localStorage.removeItem('examflow_token');
+    location.hash = '#/login';
     renderLogin();
   }
 
@@ -695,7 +775,10 @@
       renderLogin(err.message);
       return;
     }
-    if (App.state.user.role === 'Invigilator' && !location.hash) location.hash = '#/my-duties';
+    const onLoginPage = (location.hash || '').indexOf('#/login') === 0;
+    if (!location.hash || onLoginPage) {
+      location.hash = App.state.user.role === 'Invigilator' ? '#/my-duties' : '#/dashboard';
+    }
     buildShell();
     await renderRoute();
   }
@@ -703,6 +786,7 @@
   async function boot() {
     window.addEventListener('hashchange', () => {
       if (App.state.user) renderRoute();
+      else renderLogin();
     });
     await start();
   }

@@ -350,3 +350,22 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
 .auth-divider::before, .auth-divider::after { content: ""; flex: 1; height: 1px; background: var(--border, #e2e8f0); }
 .google-btn { display: flex; align-items: center; justify-content: center; gap: 10px; font-weight: 600; }
 .google-g { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: #fff; color: #1a73e8; font-weight: 700; font-size: 13px; border: 1px solid #dadce0; }
+
+/* ------------------------------------------------------------ login portals */
+.portal-grid { display: grid; gap: 10px; }
+.portal-card { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: #fff; text-decoration: none; color: var(--text); transition: border-color .15s, box-shadow .15s, transform .15s; }
+.portal-card:hover { border-color: var(--primary); box-shadow: 0 8px 22px rgba(15, 23, 42, .08); transform: translateY(-1px); }
+.portal-card:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.portal-icon { width: 34px; height: 34px; flex: none; border-radius: 10px; display: grid; place-items: center; font-size: 13px; background: var(--primary-soft); color: var(--primary); }
+.portal-card.user .portal-icon { background: #ecfdf5; color: #0f766e; }
+.portal-copy { min-width: 0; }
+.portal-title { font-weight: 650; font-size: 14px; }
+.portal-sub { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-top: 2px; }
+.portal-text { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+.portal-go { margin-left: auto; color: var(--muted); font-size: 16px; }
+.portal-card:hover .portal-go { color: var(--primary); }
+.portal-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; padding: 4px 9px; border-radius: 999px; margin-bottom: 12px; background: var(--primary-soft); color: var(--primary-dark); }
+.portal-badge.user { background: #ecfdf5; color: #0f766e; }
+.portal-badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.portal-switch { display: inline-block; margin-top: 12px; font-size: 12.5px; color: var(--primary); text-decoration: none; }
+.portal-switch:hover { text-decoration: underline; }

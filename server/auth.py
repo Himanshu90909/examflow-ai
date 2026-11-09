@@ -119,6 +119,10 @@ def can_write(user: dict, resource: str) -> bool:
     return user["role"] in write_roles
 
 
+class Unauthorized(Exception):
+    pass
+
+
 class Forbidden(Exception):
     pass
 

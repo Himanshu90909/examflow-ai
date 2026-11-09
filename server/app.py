@@ -89,8 +89,25 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if method == "POST" and path == "/api/auth/login":
                 body = self._json_body()
+                portal = (body.get("portal") or "").strip().lower()
                 user = auth.authenticate(body.get("email") or "", body.get("password") or "")
-                db.audit(conn, user, "User login", "user", user["id"])
+                if not user:
+                    raise auth.Unauthorized("Email or password is incorrect.")
+                is_admin = user["role"] in ("Super Admin", "School Admin")
+                if portal == "admin" and not is_admin:
+                    db.audit(conn, user, "Blocked sign-in (administrator portal)", "user", user["id"],
+                             "Invigilator attempted the administrator portal")
+                    conn.commit()
+                    raise auth.Unauthorized(
+                        "This is the administrator portal. Invigilators sign in from the invigilator portal.")
+                if portal == "user" and is_admin:
+                    db.audit(conn, user, "Blocked sign-in (invigilator portal)", "user", user["id"],
+                             "Administrator attempted the invigilator portal")
+                    conn.commit()
+                    raise auth.Unauthorized(
+                        "This is the invigilator portal. Administrators sign in from the admin portal.")
+                db.audit(conn, user, "User login", "user", user["id"],
+                         "Portal: %s" % (portal or "default"))
                 conn.commit()
                 return self._send(200, {"token": auth.make_token(user), "user": user})
 
@@ -213,6 +230,8 @@ class Handler(BaseHTTPRequestHandler):
                         conn, user, resource, self._json_body()))
 
             raise auth.NotFound("Endpoint not found")
+        except auth.Unauthorized as exc:
+            self._send(401, {"error": str(exc)})
         except auth.Forbidden as exc:
             self._send(403, {"error": str(exc)})
         except auth.NotFound as exc:
