@@ -4,16 +4,15 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PORT=8000 \
-    EXAMFLOW_DB=/data/examflow.db
+    EXAMFLOW_DB=/tmp/examflow.db
 
 WORKDIR /app
 COPY server ./server
 COPY static ./static
 COPY README.md ./
 
-# /data is the only path that needs to survive a restart
-RUN mkdir -p /data
-VOLUME ["/data"]
+# SQLite lives in /tmp by default (ephemeral). Mount a volume at /data and set
+# EXAMFLOW_DB=/data/examflow.db to keep timetables across restarts.
 
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=4s --start-period=10s \

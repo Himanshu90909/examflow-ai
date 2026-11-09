@@ -305,3 +305,8 @@ keeping real timetables. For durable data, deploy the same code to a host with a
 with Postgres.
 
 Never commit a real `EXAMFLOW_SECRET`; set it as a Vercel environment variable.
+
+## One-click deploy
+
+- Render: https://render.com/deploy?repo=https://github.com/yogesh9-max/examflow-ai
+- Vercel: https://vercel.com/new/clone?repository-url=https://github.com/yogesh9-max/examflow-ai

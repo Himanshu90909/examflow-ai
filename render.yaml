@@ -1,19 +1,20 @@
-# Render blueprint: free-friendly, one click from a repo.
-# SQLite lives on a mounted disk so timetables survive restarts and deploys.
+# Render blueprint. Free plan: no persistent disk, so SQLite lives in /tmp and the
+# demo data reseeds when the instance restarts.
+# To keep real timetables, upgrade the service to Starter and uncomment the disk block.
 services:
   - type: web
     name: examflow-ai
     runtime: docker
-    plan: starter
+    plan: free
     healthCheckPath: /api/health
     envVars:
       - key: EXAMFLOW_SECRET
         generateValue: true
       - key: EXAMFLOW_DB
-        value: /data/examflow.db
+        value: /tmp/examflow.db
       - key: EXAMFLOW_SEED
         value: "1"
-    disk:
-      name: examflow-data
-      mountPath: /data
-      sizeGB: 1
+#    disk:
+#      name: examflow-data
+#      mountPath: /data
+#      sizeGB: 1
