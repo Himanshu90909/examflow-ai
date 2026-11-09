@@ -19,6 +19,8 @@ import persistence
 import google_auth
 import solver_service
 
+AUTH_MODE = (os.environ.get("EXAMFLOW_AUTH_MODE") or "both").strip().lower()
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATIC = os.path.join(ROOT, "static")
 CONTENT_TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -102,7 +104,9 @@ class Handler(BaseHTTPRequestHandler):
         conn = db.connect()
         try:
             if method == "GET" and path == "/api/auth/providers":
-                return self._send(200, {"password": True, "google": google_auth.ENABLED})
+                password_on = AUTH_MODE != "google" or not google_auth.ENABLED
+                return self._send(200, {"password": password_on, "google": google_auth.ENABLED,
+                                        "mode": AUTH_MODE})
 
             if method == "GET" and path == "/api/auth/google/start":
                 if not google_auth.ENABLED:
@@ -159,6 +163,9 @@ class Handler(BaseHTTPRequestHandler):
             if method == "POST" and path == "/api/auth/login":
                 body = self._json_body()
                 portal = (body.get("portal") or "").strip().lower()
+                if AUTH_MODE == "google" and google_auth.ENABLED:
+                    raise auth.Unauthorized(
+                        "Password sign-in is switched off on this deployment. Continue with Google.")
                 user = auth.authenticate(body.get("email") or "", body.get("password") or "")
                 if not user:
                     raise auth.Unauthorized("Email or password is incorrect.")

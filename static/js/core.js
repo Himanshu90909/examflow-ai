@@ -729,9 +729,10 @@
       .then((response) => (response.ok ? response.json() : { google: false }))
       .then((providers) => {
         if (!providers || !providers.google) return;
-        slot.appendChild(h('div', { class: 'auth-divider', text: 'or' }));
+        const primary = providers.password === false;
+        if (!primary) slot.appendChild(h('div', { class: 'auth-divider', text: 'or' }));
         slot.appendChild(h('a', {
-          class: 'btn ghost block google-btn',
+          class: 'btn block google-btn' + (primary ? '' : ' ghost'),
           href: '/api/auth/google/start?portal=' + portal,
         }, h('span', { class: 'google-g', text: 'G' }), 'Continue with Google'));
       })
@@ -766,20 +767,25 @@
     const error = h('div', { class: 'alert err', style: message ? 'display:flex' : 'display:none', text: message || '' });
     const submit = h('button', { class: 'btn block', style: 'margin-top:6px', text: 'Sign in' });
     const googleSlot = h('div', { class: 'google-slot' });
+    const providers = App.state.providers || { password: true, google: false };
+    const passwordOn = providers.password !== false;
     const form = h('form', { class: 'login-form' },
       h('div', { class: 'portal-badge ' + portal, text: cfg.badge + ' portal' }),
       h('h1', { text: cfg.heading }),
       h('p', { class: 'muted small', style: 'margin-bottom:18px', text: cfg.intro }),
       error,
-      field('Email address', email),
-      field('Password', password),
-      submit,
+      passwordOn ? field('Email address', email) : null,
+      passwordOn ? field('Password', password) : null,
+      passwordOn ? submit : null,
       googleSlot,
+      passwordOn ? null : h('div', { class: 'alert info', style: 'margin-top:12px',
+        text: providers.google ? 'Sign in with your Google account. Passwords are disabled on this deployment.'
+                               : 'Google sign-in is not configured yet, so sign-in is unavailable.' }),
       h('a', { class: 'portal-switch', href: cfg.otherHref, text: cfg.otherText }),
-      h('div', { class: 'demo-box' },
+      passwordOn ? h('div', { class: 'demo-box' },
         h('div', { style: 'margin-bottom:6px;font-weight:600;color:#334155', text: 'Demonstration accounts' }),
         h('div', null, cfg.demo.map((row) => demoChip(row[0], row[1], row[2], email, password))),
-        h('div', { style: 'margin-top:8px', text: 'Seeded demonstration data \u2014 fictional schools and faculty.' })));
+        h('div', { style: 'margin-top:8px', text: 'Seeded demonstration data \u2014 fictional schools and faculty.' })) : null);
 
     loadGoogleButton(googleSlot, portal);
     const googleError = new URLSearchParams(location.search).get('google_error');
@@ -869,6 +875,10 @@
 
   async function boot() {
     takeGoogleToken();
+    try {
+      const response = await fetch('/api/auth/providers');
+      if (response.ok) App.state.providers = await response.json();
+    } catch (err) { /* fall back to the password form */ }
     window.addEventListener('hashchange', () => {
       if (App.state.user) renderRoute();
       else renderLogin();
