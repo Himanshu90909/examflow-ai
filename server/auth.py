@@ -96,6 +96,19 @@ def authenticate(email: str, password: str):
     return user
 
 
+def find_user(email: str):
+    """Active user lookup by email, without a password check (used by code sign-in)."""
+    conn = db.connect()
+    row = conn.execute("SELECT * FROM users WHERE lower(email) = ?", (email.strip().lower(),)).fetchone()
+    conn.close()
+    if not row or not row["is_active"]:
+        return None
+    user = dict(row)
+    user.pop("password_hash", None)
+    user["is_active"] = True
+    return user
+
+
 def current_user(token: str):
     payload = read_token(token or "")
     if not payload:

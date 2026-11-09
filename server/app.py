@@ -17,11 +17,25 @@ import auth
 import api
 import persistence
 import google_auth
+import mailer
+import otp
 import solver_service
 
 AUTH_MODE = (os.environ.get("EXAMFLOW_AUTH_MODE") or "both").strip().lower()
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+PORTAL_ROLES = {"admin": ("Super Admin", "School Admin"),
+                "user": ("Invigilator",),
+                "student": ("Student",)}
+
+
+def _password_sign_in_available():
+    if AUTH_MODE == "google" and google_auth.ENABLED:
+        return False
+    if AUTH_MODE == "otp" and mailer.ENABLED:
+        return False
+    return True
 STATIC = os.path.join(ROOT, "static")
 CONTENT_TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
                  ".js": "application/javascript; charset=utf-8", ".svg": "image/svg+xml",
@@ -104,8 +118,9 @@ class Handler(BaseHTTPRequestHandler):
         conn = db.connect()
         try:
             if method == "GET" and path == "/api/auth/providers":
-                password_on = AUTH_MODE != "google" or not google_auth.ENABLED
-                return self._send(200, {"password": password_on, "google": google_auth.ENABLED,
+                return self._send(200, {"password": _password_sign_in_available(),
+                                        "google": google_auth.ENABLED,
+                                        "otp": mailer.ENABLED,
                                         "mode": AUTH_MODE})
 
             if method == "GET" and path == "/api/auth/google/start":
@@ -160,12 +175,80 @@ class Handler(BaseHTTPRequestHandler):
                 conn.commit()
                 return self._redirect("/#google_token=" + quote(auth.make_token(user)))
 
+            if method == "POST" and path == "/api/auth/request-code":
+                body = self._json_body()
+                portal = (body.get("portal") or "").strip().lower()
+                email = (body.get("email") or "").strip().lower()
+                if "@" not in email or len(email) < 5:
+                    raise auth.ValidationError("Enter the email address on your account.")
+                user = auth.find_user(email)
+                allowed_roles = PORTAL_ROLES.get(portal)
+                known = bool(user) and (not allowed_roles or user["role"] in allowed_roles)
+                if known and otp.recent_request_blocked(conn, email):
+                    raise auth.ValidationError(
+                        "A code was sent a moment ago. Wait a minute before asking for another.")
+                if known:
+                    code = otp.issue(conn, email, portal)
+                    conn.commit()
+                    sent = False
+                    if mailer.ENABLED:
+                        try:
+                            mailer.send(
+                                email,
+                                "Your ExamFlow AI sign-in code",
+                                "Your ExamFlow AI sign-in code is %s. It expires in %d minutes."
+                                % (code, otp.CODE_TTL_MINUTES),
+                                "<p>Your ExamFlow AI sign-in code is <strong>%s</strong>.</p>"
+                                "<p>It expires in %d minutes. If you did not try to sign in, ignore this "
+                                "email.</p>" % (code, otp.CODE_TTL_MINUTES),
+                            )
+                            sent = True
+                            db.audit(conn, None, "Sign-in code emailed", "user", user["id"], email)
+                            conn.commit()
+                        except Exception:  # noqa: BLE001
+                            traceback.print_exc()
+                # identical response either way: never reveal whether an address exists
+                return self._send(200, {"sent": True, "delivered": bool(mailer.ENABLED), "email": email,
+                                        "expires_in": otp.CODE_TTL_MINUTES * 60})
+
+            if method == "POST" and path == "/api/auth/verify-code":
+                body = self._json_body()
+                portal = (body.get("portal") or "").strip().lower()
+                email = (body.get("email") or "").strip().lower()
+                ok, reason = otp.confirm(conn, email, portal, body.get("code"))
+                conn.commit()
+                if not ok:
+                    raise auth.Unauthorized(reason)
+                user = auth.find_user(email)
+                if not user:
+                    raise auth.Unauthorized("No active account is linked to that address.")
+                allowed_roles = PORTAL_ROLES.get(portal)
+                if allowed_roles and user["role"] not in allowed_roles:
+                    db.audit(conn, user, "Blocked sign-in (wrong portal)", "user", user["id"],
+                             "Tried the %s portal as %s" % (portal, user["role"]))
+                    conn.commit()
+                    if portal == "admin":
+                        raise auth.Unauthorized(
+                            "This is the administrator portal. Invigilators and students sign in from "
+                            "their own portal.")
+                    if portal == "student":
+                        raise auth.Unauthorized(
+                            "This is the student portal. Staff sign in from the administrator or "
+                            "invigilator portal.")
+                    raise auth.Unauthorized(
+                        "This is the invigilator portal. Administrators and students sign in from "
+                        "their own portal.")
+                db.audit(conn, user, "User login (email code)", "user", user["id"],
+                         "Portal: %s" % (portal or "default"))
+                conn.commit()
+                return self._send(200, {"token": auth.make_token(user), "user": user})
+
             if method == "POST" and path == "/api/auth/login":
                 body = self._json_body()
                 portal = (body.get("portal") or "").strip().lower()
-                if AUTH_MODE == "google" and google_auth.ENABLED:
+                if not _password_sign_in_available():
                     raise auth.Unauthorized(
-                        "Password sign-in is switched off on this deployment. Continue with Google.")
+                        "Password sign-in is switched off on this deployment.")
                 user = auth.authenticate(body.get("email") or "", body.get("password") or "")
                 if not user:
                     raise auth.Unauthorized("Email or password is incorrect.")

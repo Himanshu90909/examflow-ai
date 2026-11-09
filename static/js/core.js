@@ -759,6 +759,86 @@
       h('span', { class: 'portal-go', text: '\u2192' }));
   }
 
+  /* Email-a-code sign-in: request a 6 digit code, then verify it. */
+  function buildCodeFlow(portal, cfg, onDone) {
+    const email = inputEl({ type: 'email', placeholder: 'you@university.edu', autocomplete: 'username' });
+    const code = inputEl({ type: 'text', placeholder: '6 digit code', autocomplete: 'one-time-code', maxlength: '6' });
+    const note = h('div', { class: 'alert info', style: 'display:none;margin-bottom:12px' });
+    const error = h('div', { class: 'alert err', style: 'display:none' });
+    const sendBtn = h('button', { class: 'btn ghost block', type: 'button', text: 'Email me a sign-in code' });
+    const verifyBtn = h('button', { class: 'btn block', type: 'button', style: 'display:none', text: 'Verify and sign in' });
+    const codeRow = h('div', { style: 'display:none' }, field('Sign-in code', code), verifyBtn);
+
+    const show = (el, text, kind) => {
+      el.className = 'alert ' + (kind || 'info');
+      el.textContent = text;
+      el.style.display = 'flex';
+    };
+    const hide = (el) => { el.style.display = 'none'; };
+
+    sendBtn.addEventListener('click', async () => {
+      hide(error);
+      if (!email.value.trim()) { show(error, 'Enter the email address on your account.', 'err'); return; }
+      sendBtn.disabled = true;
+      sendBtn.innerHTML = '<span class="spinner"></span> Sending';
+      try {
+        const data = await api('/api/auth/request-code', {
+          method: 'POST',
+          body: { email: email.value.trim(), portal: portal },
+        });
+        hide(error);
+        if (data.delivered) {
+          show(note, 'If that address belongs to an account here, a 6 digit code is on its way. It expires in 10 minutes.', 'ok');
+          codeRow.style.display = '';
+          code.focus();
+        } else {
+          show(note, 'Email delivery is not configured on this deployment yet.', 'warn');
+        }
+      } catch (err) {
+        show(error, err.message, 'err');
+      } finally {
+        sendBtn.disabled = false;
+        sendBtn.textContent = 'Email me a sign-in code';
+      }
+    });
+
+    verifyBtn.addEventListener('click', async () => {
+      hide(error);
+      const value = code.value.replace(/\D/g, '');
+      if (value.length !== 6) { show(error, 'Enter the 6 digit code from the email.', 'err'); return; }
+      verifyBtn.disabled = true;
+      verifyBtn.innerHTML = '<span class="spinner"></span> Verifying';
+      try {
+        const data = await api('/api/auth/verify-code', {
+          method: 'POST',
+          body: { email: email.value.trim(), code: value, portal: portal },
+        });
+        App.state.token = data.token;
+        App.state.user = data.user;
+        localStorage.setItem('examflow_token', data.token);
+        await onDone();
+      } catch (err) {
+        show(error, err.message, 'err');
+        verifyBtn.disabled = false;
+        verifyBtn.textContent = 'Verify and sign in';
+      }
+    });
+
+    code.addEventListener('input', () => { code.value = code.value.replace(/\D/g, '').slice(0, 6); });
+    code.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); verifyBtn.click(); } });
+
+    return h('div', { class: 'code-flow' },
+      h('div', { class: 'portal-badge ' + portal, text: cfg.badge + ' portal' }),
+      h('h1', { text: cfg.heading.replace('sign in', 'sign in with a code') }),
+      h('p', { class: 'muted small', style: 'margin-bottom:16px',
+        text: 'We email a one-time code to the address on your account. No password needed.' }),
+      note, error,
+      field('Email address', email),
+      sendBtn,
+      codeRow,
+      h('a', { class: 'portal-switch', href: cfg.otherHref, text: cfg.otherText }));
+  }
+
   function renderPortalLogin(portal, message) {
     const cfg = PORTALS[portal];
     const root = document.getElementById('root');
@@ -778,9 +858,18 @@
       passwordOn ? field('Password', password) : null,
       passwordOn ? submit : null,
       googleSlot,
+      providers.otp ? h('div', { class: 'mt12', style: 'margin-top:10px' },
+        h('button', { class: 'btn ghost block', type: 'button', text: 'Email me a sign-in code',
+          onclick: () => {
+            const next = buildCodeFlow(portal, cfg, async () => { await start(); });
+            form.replaceWith(next);
+            const first = next.querySelector('input');
+            if (first) first.focus();
+          } })) : null,
       passwordOn ? null : h('div', { class: 'alert info', style: 'margin-top:12px',
-        text: providers.google ? 'Sign in with your Google account. Passwords are disabled on this deployment.'
-                               : 'Google sign-in is not configured yet, so sign-in is unavailable.' }),
+        text: providers.otp ? 'Sign in with a one-time code sent to your email.'
+                            : (providers.google ? 'Sign in with your Google account.'
+                                                : 'Sign-in is unavailable until a provider is configured.') }),
       h('a', { class: 'portal-switch', href: cfg.otherHref, text: cfg.otherText }),
       passwordOn ? h('div', { class: 'demo-box' },
         h('div', { style: 'margin-bottom:6px;font-weight:600;color:#334155', text: 'Demonstration accounts' }),

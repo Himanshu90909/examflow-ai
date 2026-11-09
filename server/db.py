@@ -39,6 +39,18 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS login_codes (
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL,
+    portal TEXT,
+    code_hash TEXT NOT NULL,
+    salt TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    expires_at TEXT NOT NULL,
+    consumed_at TEXT,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS departments (
     id TEXT PRIMARY KEY,
     school_id TEXT NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
