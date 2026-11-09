@@ -322,15 +322,6 @@ Environment variables on Vercel: `EXAMFLOW_SNAPSHOT_REPO`, `EXAMFLOW_GITHUB_TOKE
 Treat the snapshot store as demo-grade: two instances writing at the same instant keep
 the last commit. Move to a managed Postgres for real multi-user deployments.
 
-## Google sign-in
-
-`GET /api/auth/google/start` begins the OAuth 2.0 code flow and
-`/api/auth/google/callback` finishes it, then issues the normal ExamFlow session token.
-Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` and register the redirect URI
-`<site>/api/auth/google/callback` on the OAuth client. Emails listed in
-`EXAMFLOW_GOOGLE_ADMIN_EMAILS` become Super Admin on first sign-in, everyone else is
-provisioned as an Invigilator until an admin changes their role.
-
 ## One-click deploy
 
 - Render: https://render.com/deploy?repo=https://github.com/yogesh9-max/examflow-ai
