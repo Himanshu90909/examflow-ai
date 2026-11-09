@@ -308,6 +308,29 @@ Never commit a real `EXAMFLOW_SECRET`; set it as a Vercel environment variable.
 
 **Live demo:** https://examflow-ai-api.vercel.app (Vercel, SQLite in /tmp, reseeds on cold start)
 
+## Persistence on Vercel
+
+Vercel functions only have a throw-away `/tmp`, so the application keeps its SQLite
+database in this repository as `data/examflow.db.gz`:
+
+* cold start: the snapshot is restored into `EXAMFLOW_DB` before the app boots
+* every write (POST/PUT/DELETE): the database is backed up, gzipped and committed
+* disable it by clearing `EXAMFLOW_SNAPSHOT_REPO`
+
+Environment variables on Vercel: `EXAMFLOW_SNAPSHOT_REPO`, `EXAMFLOW_GITHUB_TOKEN`,
+`EXAMFLOW_SECRET`, `EXAMFLOW_DB=/tmp/examflow.db`, `EXAMFLOW_GOOGLE_ADMIN_EMAILS`.
+Treat the snapshot store as demo-grade: two instances writing at the same instant keep
+the last commit. Move to a managed Postgres for real multi-user deployments.
+
+## Google sign-in
+
+`GET /api/auth/google/start` begins the OAuth 2.0 code flow and
+`/api/auth/google/callback` finishes it, then issues the normal ExamFlow session token.
+Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` and register the redirect URI
+`<site>/api/auth/google/callback` on the OAuth client. Emails listed in
+`EXAMFLOW_GOOGLE_ADMIN_EMAILS` become Super Admin on first sign-in, everyone else is
+provisioned as an Invigilator until an admin changes their role.
+
 ## One-click deploy
 
 - Render: https://render.com/deploy?repo=https://github.com/yogesh9-max/examflow-ai
