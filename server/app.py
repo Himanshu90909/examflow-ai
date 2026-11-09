@@ -243,6 +243,45 @@ class Handler(BaseHTTPRequestHandler):
                 conn.commit()
                 return self._send(200, {"token": auth.make_token(user), "user": user})
 
+            if method == "POST" and path == "/api/auth/gmail":
+                body = self._json_body()
+                portal = (body.get("portal") or "student").strip().lower()
+                email = (body.get("email") or "").strip().lower()
+                password = body.get("password") or ""
+                if "@" not in email or "." not in email.split("@")[-1]:
+                    raise auth.ValidationError("Enter your email address.")
+                if len(password) < 8:
+                    raise auth.ValidationError("Choose a password of at least 8 characters.")
+                row = conn.execute("SELECT * FROM users WHERE lower(email) = ?", (email,)).fetchone()
+                if row and not row["is_active"]:
+                    raise auth.Unauthorized("This account has been deactivated. Contact your administrator.")
+                if row:
+                    user = auth.authenticate(email, password)
+                    if not user:
+                        raise auth.Unauthorized(
+                            "This email already has an account. Enter its password, or sign up with a "
+                            "different address.")
+                    allowed_roles = PORTAL_ROLES.get(portal)
+                    if allowed_roles and user["role"] not in allowed_roles:
+                        raise auth.Unauthorized(
+                            "That account belongs to a different portal. Use the right sign-in page "
+                            "for its role.")
+                    db.audit(conn, user, "User login (email account)", "user", user["id"],
+                             "Portal: %s" % (portal or "default"))
+                    conn.commit()
+                    return self._send(200, {"token": auth.make_token(user), "user": user,
+                                            "created": False})
+                user = auth.provision_gmail_account(conn, email, password, portal, body.get("full_name"))
+                if not user:
+                    raise auth.ValidationError("Could not create that account. Try another address.")
+                db.audit(conn, user, "Self-service account created", "user", user["id"],
+                         "Portal: %s" % (portal or "default"))
+                db.notify(conn, user["id"], "Welcome to ExamFlow AI",
+                          "Your %s access is ready. Explore your dashboard to get started."
+                          % user["role"])
+                conn.commit()
+                return self._send(201, {"token": auth.make_token(user), "user": user, "created": True})
+
             if method == "POST" and path == "/api/auth/login":
                 body = self._json_body()
                 portal = (body.get("portal") or "").strip().lower()

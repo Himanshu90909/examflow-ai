@@ -109,6 +109,44 @@ def find_user(email: str):
     return user
 
 
+PORTAL_DEFAULT_ROLE = {"admin": "School Admin", "user": "Invigilator", "student": "Student"}
+
+
+def provision_gmail_account(conn, email, password, portal, full_name=None):
+    """Create a self-service account for an email address on first sign-in.
+
+    The portal decides the starting role; new accounts are bound to the primary
+    school so the dashboards open with real (seeded) data instead of a blank shell.
+    """
+    import db as _db  # local import keeps the module importable in script mode
+
+    role = PORTAL_DEFAULT_ROLE.get(portal or "student", "Student")
+    school = conn.execute("SELECT id FROM schools ORDER BY created_at LIMIT 1").fetchone()
+    school_id = school["id"] if school else None
+    name = (full_name or "").strip()
+    if not name:
+        handle = email.split("@")[0].replace(".", " ").replace("_", " ").strip()
+        name = " ".join(part.capitalize() for part in handle.split()) or email
+
+    user_id = "usr_" + secrets.token_hex(8)
+    conn.execute(
+        "INSERT INTO users (id, full_name, email, password_hash, role, school_id, department_id,"
+        " is_active, created_at) VALUES (?,?,?,?,?,?,NULL,1,?)",
+        (user_id, name, email.strip().lower(), hash_password(password), role, school_id, _db.now_iso()),
+    )
+    group_id = None
+    if role == "Student" and school_id:
+        group = conn.execute(
+            "SELECT id FROM student_groups WHERE school_id = ? ORDER BY created_at LIMIT 1",
+            (school_id,),
+        ).fetchone()
+        group_id = group["id"] if group else None
+        if group_id:
+            conn.execute("UPDATE users SET student_group_id = ? WHERE id = ?", (group_id, user_id))
+    conn.commit()
+    return find_user(email)
+
+
 def current_user(token: str):
     payload = read_token(token or "")
     if not payload:

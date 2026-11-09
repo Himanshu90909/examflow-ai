@@ -692,6 +692,18 @@
   function renderPortalChooser(message) {
     const root = document.getElementById('root');
     const err = h('div', { class: 'alert err', style: message ? 'display:flex' : 'display:none', text: message || '' });
+    switchMode.addEventListener('click', () => {
+      createMode = !createMode;
+      submit.textContent = createMode ? 'Get access with Gmail' : 'Sign in';
+      switchMode.textContent = createMode ? 'Back to sign in' : 'New here? Get access with your Gmail';
+      modeNote.style.display = createMode ? 'flex' : 'none';
+      modeNote.textContent = 'Enter your Gmail address and pick a password (8 or more characters). '
+        + 'Access is created instantly \u2014 no email or verification code needed \u2014 as ' + roleName + '.';
+      error.style.display = 'none';
+      if (createMode) password.setAttribute('autocomplete', 'new-password');
+      else password.setAttribute('autocomplete', 'current-password');
+    });
+
     root.innerHTML = '';
     root.appendChild(h('div', { class: 'login' },
       h('div', { class: 'login-aside' },
@@ -846,6 +858,11 @@
     const password = inputEl({ type: 'password', placeholder: '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022', autocomplete: 'current-password' });
     const error = h('div', { class: 'alert err', style: message ? 'display:flex' : 'display:none', text: message || '' });
     const submit = h('button', { class: 'btn block', style: 'margin-top:6px', text: 'Sign in' });
+    let createMode = false;
+    const roleName = { admin: 'a school administrator', user: 'an invigilator', student: 'a student' }[portal];
+    const modeNote = h('div', { class: 'alert info', style: 'display:none;margin-top:10px' });
+    const switchMode = h('button', { class: 'btn ghost block', type: 'button', style: 'margin-top:8px',
+      text: 'New here? Get access with your Gmail' });
     const googleSlot = h('div', { class: 'google-slot' });
     const providers = App.state.providers || { password: true, google: false };
     const passwordOn = providers.password !== false;
@@ -857,6 +874,8 @@
       passwordOn ? field('Email address', email) : null,
       passwordOn ? field('Password', password) : null,
       passwordOn ? submit : null,
+      passwordOn ? switchMode : null,
+      passwordOn ? modeNote : null,
       googleSlot,
       providers.otp ? h('div', { class: 'mt12', style: 'margin-top:10px' },
         h('button', { class: 'btn ghost block', type: 'button', text: 'Email me a sign-in code',
@@ -887,9 +906,9 @@
       e.preventDefault();
       error.style.display = 'none';
       submit.disabled = true;
-      submit.innerHTML = '<span class="spinner"></span> Signing in';
+      submit.innerHTML = '<span class="spinner"></span> ' + (createMode ? 'Creating access' : 'Signing in');
       try {
-        const data = await api('/api/auth/login', {
+        const data = await api(createMode ? '/api/auth/gmail' : '/api/auth/login', {
           method: 'POST',
           body: { email: email.value.trim(), password: password.value, portal: portal },
         });
@@ -901,10 +920,12 @@
         error.textContent = err.message;
         error.style.display = 'flex';
         submit.disabled = false;
-        submit.textContent = 'Sign in';
+        submit.textContent = createMode ? 'Get access with Gmail' : 'Sign in';
       } finally {
         submit.disabled = false;
-        if (document.body.contains(submit)) submit.textContent = 'Sign in';
+        if (document.body.contains(submit)) {
+          submit.textContent = createMode ? 'Get access with Gmail' : 'Sign in';
+        }
       }
     });
 
