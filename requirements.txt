@@ -1,0 +1,2 @@
+# ExamFlow AI uses only the Python standard library.
+# The Vercel Python runtime needs this file present even when empty.

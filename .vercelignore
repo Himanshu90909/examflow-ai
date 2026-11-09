@@ -1,0 +1,5 @@
+examflow.db
+**/__pycache__/**
+**/*.pyc
+tests/
+*.zip
