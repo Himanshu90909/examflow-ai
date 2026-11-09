@@ -3,10 +3,13 @@
   "functions": {
     "api/index.py": {
       "maxDuration": 60,
-      "includeFiles": ["server/**", "static/**"]
+      "includeFiles": "{server,static}/**"
     }
   },
   "rewrites": [
-    { "source": "/(.*)", "destination": "/api/index" }
+    {
+      "source": "/(.*)",
+      "destination": "/api/index"
+    }
   ]
 }
