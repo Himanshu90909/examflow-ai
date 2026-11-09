@@ -603,12 +603,34 @@
   }
 
   /* ------------------------------------------------------------------- auth */
+  function googleErrorMessage(code) {
+    if (!code) return '';
+    if (code === 'not_configured') return 'Google sign-in is not configured on this deployment yet.';
+    if (code === 'state') return 'That Google sign-in link expired. Please try again.';
+    if (code === 'inactive') return 'That account is deactivated. Ask a Super Admin to re-enable it.';
+    if (code === 'access_denied') return 'Google sign-in was cancelled.';
+    return decodeURIComponent(code);
+  }
+
+  function loadGoogleButton(slot) {
+    fetch('/api/auth/providers').then((r) => r.json()).then((providers) => {
+      if (!providers || !providers.google) return;
+      slot.appendChild(h('div', { class: 'auth-divider', text: 'or' }));
+      slot.appendChild(h('button', {
+        type: 'button', class: 'btn ghost block google-btn',
+        onclick: () => { window.location.href = '/api/auth/google/start'; },
+      }, h('span', { class: 'google-g', text: 'G' }), h('span', { text: 'Continue with Google' })));
+    }).catch(() => {});
+  }
+
   function renderLogin(message) {
     const root = document.getElementById('root');
     const email = inputEl({ type: 'email', placeholder: 'you@university.edu', autocomplete: 'username' });
     const password = inputEl({ type: 'password', placeholder: '••••••••', autocomplete: 'current-password' });
     const error = h('div', { class: 'alert err', style: 'display:none' });
     const submit = h('button', { class: 'btn block', style: 'margin-top:6px', text: 'Sign in' });
+    const googleSlot = h('div', { class: 'google-slot' });
+    loadGoogleButton(googleSlot);
     const form = h('form', { class: 'login-form' },
       h('h1', { text: 'Welcome back' }),
       h('p', { class: 'muted small', style: 'margin-bottom:18px', text: 'Sign in to manage examinations, rooms and invigilation duties.' }),
@@ -616,6 +638,7 @@
       field('Email address', email),
       field('Password', password),
       submit,
+      googleSlot,
       h('div', { class: 'demo-box' },
         h('div', { style: 'margin-bottom:6px;font-weight:600;color:#334155', text: 'Demonstration accounts' }),
         h('div', null,
@@ -701,9 +724,21 @@
   }
 
   async function boot() {
+    const params = new URLSearchParams(location.search);
+    const googleError = googleErrorMessage(params.get('google_error'));
+    if (params.get('google_error')) {
+      history.replaceState(null, '', location.pathname + location.hash);
+    }
+    const match = /google_token=([^&]+)/.exec(location.hash || '');
+    if (match) {
+      App.state.token = decodeURIComponent(match[1]);
+      localStorage.setItem('examflow_token', App.state.token);
+      history.replaceState(null, '', location.pathname);
+    }
     window.addEventListener('hashchange', () => {
       if (App.state.user) renderRoute();
     });
+    if (googleError && !App.state.token) { renderLogin(googleError); return; }
     await start();
   }
 

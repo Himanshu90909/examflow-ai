@@ -344,3 +344,9 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
   .card, .table-wrap { box-shadow: none; border-color: #cbd5e1; }
   .view { padding: 0; }
 }
+
+/* ------------------------------------------------------------ google sign-in */
+.auth-divider { display: flex; align-items: center; gap: 10px; margin: 14px 0 10px; color: var(--muted, #94a3b8); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+.auth-divider::before, .auth-divider::after { content: ""; flex: 1; height: 1px; background: var(--border, #e2e8f0); }
+.google-btn { display: flex; align-items: center; justify-content: center; gap: 10px; font-weight: 600; }
+.google-g { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: #fff; color: #1a73e8; font-weight: 700; font-size: 13px; border: 1px solid #dadce0; }

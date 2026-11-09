@@ -268,6 +268,8 @@ def new_id() -> str:
 
 
 def connect() -> sqlite3.Connection:
+    import persistence
+    persistence.ensure_restored()
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
@@ -275,6 +277,8 @@ def connect() -> sqlite3.Connection:
 
 
 def init_db(seed: bool = True) -> None:
+    import persistence
+    persistence.ensure_restored()
     fresh = not os.path.exists(DB_PATH)
     conn = connect()
     conn.executescript(SCHEMA)

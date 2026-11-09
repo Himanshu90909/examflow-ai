@@ -15,6 +15,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import db
 import auth
 import api
+import google_auth
+import persistence
 import solver_service
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -34,7 +36,68 @@ class Handler(BaseHTTPRequestHandler):
         if os.environ.get("EXAMFLOW_QUIET") != "1":
             sys.stderr.write("%s - %s\n" % (self.address_string(), fmt % args))
 
+    def _redirect(self, location):
+        self.send_response(302)
+        self.send_header("Location", location)
+        self.send_header("Content-Length", "0")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+
+    def _origin(self):
+        proto = self.headers.get("X-Forwarded-Proto") or "http"
+        host = self.headers.get("X-Forwarded-Host") or self.headers.get("Host") or "localhost"
+        return "%s://%s" % (proto, host)
+
+    def _google_start(self):
+        if not google_auth.ENABLED:
+            return self._redirect("/?google_error=not_configured")
+        redirect_uri = self._origin() + "/api/auth/google/callback"
+        state = google_auth.sign_state(redirect_uri)
+        return self._redirect(google_auth.authorize_url(redirect_uri, state))
+
+    def _google_callback(self, query):
+        from urllib.parse import quote
+        if query.get("error"):
+            return self._redirect("/?google_error=" + quote(query["error"]))
+        state = google_auth.read_state(query.get("state") or "")
+        if not state:
+            return self._redirect("/?google_error=state")
+        try:
+            profile = google_auth.exchange_code(query.get("code") or "", state["r"])
+        except google_auth.GoogleAuthError as exc:
+            return self._redirect("/?google_error=" + quote(str(exc)[:120]))
+
+        conn = db.connect()
+        try:
+            row = conn.execute("SELECT * FROM users WHERE lower(email) = ?", (profile["email"],)).fetchone()
+            if row is None:
+                user_id = db.new_id()
+                role = google_auth.role_for(profile["email"])
+                conn.execute(
+                    "INSERT INTO users (id, full_name, email, password_hash, role, school_id, department_id, "
+                    "is_active, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                    (user_id, profile["name"], profile["email"],
+                     auth.hash_password(__import__("secrets").token_urlsafe(24)), role,
+                     None, None, 1, db.now_iso()))
+                row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+                db.audit(conn, None, "Google account provisioned", "user", user_id,
+                         "Signed in with Google as %s" % role)
+            user = dict(row)
+            user.pop("password_hash", None)
+            user["is_active"] = bool(user["is_active"])
+            if not user["is_active"]:
+                conn.rollback()
+                return self._redirect("/?google_error=inactive")
+            db.audit(conn, user, "User login (Google)", "user", user["id"])
+            conn.commit()
+        finally:
+            conn.close()
+        return self._redirect("/#google_token=" + quote(auth.make_token(user)))
+
     def _send(self, status, payload=None, content_type="application/json", raw=None):
+        if (status < 400 and self.command in ("POST", "PUT", "PATCH", "DELETE")
+                and (self.path or "").startswith("/api")):
+            persistence.save_now()
         body = raw if raw is not None else (
             json.dumps(payload).encode("utf-8") if payload is not None else b"")
         if not isinstance(body, bytes):
@@ -73,6 +136,13 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/health":
             return self._send(200, {"status": "ok", "app": "ExamFlow AI"})
+
+        if method == "GET" and path == "/api/auth/providers":
+            return self._send(200, {"password": True, "google": google_auth.ENABLED})
+        if method == "GET" and path == "/api/auth/google/start":
+            return self._google_start()
+        if method == "GET" and path == "/api/auth/google/callback":
+            return self._google_callback(query)
 
         conn = db.connect()
         try:
