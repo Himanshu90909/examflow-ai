@@ -657,6 +657,8 @@
       badge: 'Student',
       heading: 'Student sign in',
       intro: 'See when and where your examinations are held, and which seat block to report to.',
+      lead: 'Your examinations, without the guesswork.',
+      body: 'Every paper your batch sits, with the date, session and room the examination office has published.',
       demo: [['Student', 'student@examflow.ai', 'Student@123']],
       points: ['Only your own subjects and groups',
                'Date, session, room and seat count for each paper',
@@ -763,6 +765,7 @@
     const password = inputEl({ type: 'password', placeholder: '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022', autocomplete: 'current-password' });
     const error = h('div', { class: 'alert err', style: message ? 'display:flex' : 'display:none', text: message || '' });
     const submit = h('button', { class: 'btn block', style: 'margin-top:6px', text: 'Sign in' });
+    const googleSlot = h('div', { class: 'google-slot' });
     const form = h('form', { class: 'login-form' },
       h('div', { class: 'portal-badge ' + portal, text: cfg.badge + ' portal' }),
       h('h1', { text: cfg.heading }),
@@ -777,6 +780,13 @@
         h('div', { style: 'margin-bottom:6px;font-weight:600;color:#334155', text: 'Demonstration accounts' }),
         h('div', null, cfg.demo.map((row) => demoChip(row[0], row[1], row[2], email, password))),
         h('div', { style: 'margin-top:8px', text: 'Seeded demonstration data \u2014 fictional schools and faculty.' })));
+
+    loadGoogleButton(googleSlot, portal);
+    const googleError = new URLSearchParams(location.search).get('google_error');
+    if (googleError) {
+      error.textContent = GOOGLE_ERRORS[googleError] || 'Google sign-in did not complete. Please try again.';
+      error.style.display = 'flex';
+    }
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();

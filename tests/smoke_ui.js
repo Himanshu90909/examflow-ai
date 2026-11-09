@@ -94,6 +94,13 @@ const document = {
 
 const resolve = (input) => (typeof input === 'string' && input.startsWith('/') ? BASE + input : input);
 const store = {};
+const textOf = (node) => {
+  if (!node) return '';
+  if (node._text !== undefined) return String(node._text);
+  let out = node.textContent !== undefined ? String(node.textContent) : '';
+  for (const child of node.childNodes || node.children || []) out += textOf(child);
+  return out === '[object Object]' ? '' : out;
+};
 const localStorage = {
   getItem: (k) => (k in store ? store[k] : null),
   setItem: (k, v) => { store[k] = String(v); },
