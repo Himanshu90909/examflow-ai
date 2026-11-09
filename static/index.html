@@ -6,17 +6,46 @@
 <title>ExamFlow AI · Multi-School Examination Scheduling</title>
 <meta name="description" content="ExamFlow AI builds conflict-free examination timetables and fair invigilation duties across multiple schools using constraint programming." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%232563eb'/><text x='16' y='22' font-family='Arial' font-size='16' font-weight='bold' fill='white' text-anchor='middle'>E</text></svg>" />
-<link rel="stylesheet" href="static/css/styles.css?v=4" />
+<link rel="stylesheet" href="static/css/styles.css?v=6" />
 </head>
 <body>
+<script>
+  /* If a bundle fails to load, explain it instead of leaving a blank page. */
+  (function () {
+    function show(reason) {
+      var root = document.getElementById('root');
+      if (!root || root.childElementCount) return;
+      root.innerHTML =
+        '<div style="max-width:620px;margin:48px auto;padding:0 20px;font-family:system-ui,-apple-system,Segoe UI,sans-serif">' +
+        '<h2 style="margin:0 0 10px;color:#0f172a">ExamFlow AI could not start</h2>' +
+        '<p style="color:#475569;line-height:1.55">Please refresh this page. If it still does not open, ' +
+        'share the message below with support.</p>' +
+        '<pre style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:10px;padding:12px;' +
+        'white-space:pre-wrap;word-break:break-word;color:#334155;font-size:13px">' +
+        String(reason || 'unknown error').replace(/[<>&]/g, '') + '</pre></div>';
+    }
+    window.addEventListener('error', function (event) {
+      if (event && event.message) show(event.message);
+    });
+    window.addEventListener('unhandledrejection', function (event) {
+      var reason = event && event.reason;
+      show(reason && reason.message ? reason.message : reason);
+    });
+    setTimeout(function () {
+      var root = document.getElementById('root');
+      if (root && !root.childElementCount) show('Nothing rendered after 12 seconds.');
+    }, 12000);
+  })();
+</script>
 <div id="root"></div>
+<noscript><p style="font-family:system-ui;padding:24px">ExamFlow AI needs JavaScript enabled.</p></noscript>
 <div id="toasts" aria-live="polite"></div>
 <div id="modal-root"></div>
 
-<script src="static/js/core.js?v=4"></script>
-<script src="static/js/pages.js?v=4"></script>
-<script src="static/js/scheduling.js?v=4"></script>
-<script src="static/js/reports.js?v=4"></script>
+<script src="static/js/core.js?v=6"></script>
+<script src="static/js/pages.js?v=6"></script>
+<script src="static/js/scheduling.js?v=6"></script>
+<script src="static/js/reports.js?v=6"></script>
 <script>
   document.addEventListener('DOMContentLoaded', () => App.boot());
 </script>

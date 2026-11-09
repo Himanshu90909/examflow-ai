@@ -280,6 +280,8 @@ class Handler(BaseHTTPRequestHandler):
                           "Your %s access is ready. Explore your dashboard to get started."
                           % user["role"])
                 conn.commit()
+                # a new account must survive the next cold start, so snapshot it now
+                persistence.save_now()
                 return self._send(201, {"token": auth.make_token(user), "user": user, "created": True})
 
             if method == "POST" and path == "/api/auth/login":

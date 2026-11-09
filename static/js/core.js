@@ -692,18 +692,6 @@
   function renderPortalChooser(message) {
     const root = document.getElementById('root');
     const err = h('div', { class: 'alert err', style: message ? 'display:flex' : 'display:none', text: message || '' });
-    switchMode.addEventListener('click', () => {
-      createMode = !createMode;
-      submit.textContent = createMode ? 'Get access with Gmail' : 'Sign in';
-      switchMode.textContent = createMode ? 'Back to sign in' : 'New here? Get access with your Gmail';
-      modeNote.style.display = createMode ? 'flex' : 'none';
-      modeNote.textContent = 'Enter your Gmail address and pick a password (8 or more characters). '
-        + 'Access is created instantly \u2014 no email or verification code needed \u2014 as ' + roleName + '.';
-      error.style.display = 'none';
-      if (createMode) password.setAttribute('autocomplete', 'new-password');
-      else password.setAttribute('autocomplete', 'current-password');
-    });
-
     root.innerHTML = '';
     root.appendChild(h('div', { class: 'login' },
       h('div', { class: 'login-aside' },
@@ -929,6 +917,18 @@
       }
     });
 
+    switchMode.addEventListener('click', () => {
+      createMode = !createMode;
+      submit.textContent = createMode ? 'Get access with Gmail' : 'Sign in';
+      switchMode.textContent = createMode ? 'Back to sign in' : 'New here? Get access with your Gmail';
+      modeNote.style.display = createMode ? 'flex' : 'none';
+      modeNote.textContent = 'Enter your Gmail address and pick a password (8 or more characters). '
+        + 'Access is created instantly \u2014 no email or verification code needed \u2014 as ' + roleName + '.';
+      error.style.display = 'none';
+      if (createMode) password.setAttribute('autocomplete', 'new-password');
+      else password.setAttribute('autocomplete', 'current-password');
+    });
+
     root.innerHTML = '';
     root.appendChild(h('div', { class: 'login' },
       h('div', { class: 'login-aside' },
@@ -984,6 +984,18 @@
   }
 
   async function boot() {
+    /* Show something instantly: the first API call can take a few seconds on a
+       cold serverless instance, and a blank screen looks like a broken site. */
+    const splashHost = document.getElementById('root');
+    if (splashHost && !splashHost.childElementCount) {
+      splashHost.innerHTML =
+        '<div style="min-height:70vh;display:flex;flex-direction:column;align-items:center;' +
+        'justify-content:center;gap:14px;font-family:system-ui,-apple-system,Segoe UI,sans-serif">' +
+        '<div style="width:38px;height:38px;border-radius:10px;background:#2563eb;color:#fff;' +
+        'display:flex;align-items:center;justify-content:center;font-weight:700;font-size:19px">E</div>' +
+        '<div style="color:#0f172a;font-weight:600">ExamFlow AI</div>' +
+        '<div style="color:#64748b;font-size:13px">Starting up, one moment…</div></div>';
+    }
     takeGoogleToken();
     try {
       const response = await fetch('/api/auth/providers');
