@@ -43,8 +43,9 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _send(self, status, payload=None, content_type="application/json", raw=None):
+        path = self.path or ""
         if (status < 400 and self.command in ("POST", "PUT", "PATCH", "DELETE")
-                and (self.path or "").startswith("/api")):
+                and path.startswith("/api") and not path.startswith("/api/auth")):
             persistence.save_now()
         body = raw if raw is not None else (
             json.dumps(payload).encode("utf-8") if payload is not None else b"")

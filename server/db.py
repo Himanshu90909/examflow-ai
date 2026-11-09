@@ -287,6 +287,39 @@ def init_db(seed: bool = True) -> None:
     if seed and fresh:
         from seed import seed_database
         seed_database()
+    if link_invigilator_accounts():
+        import persistence
+        persistence.save_now()
+
+
+def link_invigilator_accounts() -> int:
+    """Attach invigilator logins to their duty profile (idempotent).
+
+    Matches on e-mail first, then on an exact name for profiles that were imported
+    without a login yet. Returns the number of profiles that were linked.
+    """
+    conn = connect()
+    linked = 0
+    try:
+        users = conn.execute(
+            "SELECT id, full_name, email FROM users WHERE role = 'Invigilator'").fetchall()
+        for row in users:
+            if conn.execute("SELECT 1 FROM invigilators WHERE user_id = ?", (row["id"],)).fetchone():
+                continue
+            profile = conn.execute("SELECT id FROM invigilators WHERE LOWER(email) = LOWER(?)",
+                                   (row["email"] or "",)).fetchone()
+            if not profile:
+                profile = conn.execute(
+                    "SELECT id FROM invigilators WHERE user_id IS NULL AND LOWER(name) = LOWER(?)",
+                    (row["full_name"],)).fetchone()
+            if profile:
+                conn.execute("UPDATE invigilators SET user_id = ?, email = COALESCE(NULLIF(email, ''), ?) "
+                             "WHERE id = ?", (row["id"], row["email"], profile["id"]))
+                linked += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return linked
 
 
 def decode_row(table: str, row: sqlite3.Row) -> dict:

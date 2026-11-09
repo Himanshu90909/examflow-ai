@@ -30,36 +30,36 @@
 
   const NAV = [
     ['Overview', [
-      { id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
+      { id: 'dashboard', label: 'Dashboard', icon: 'dashboard', role: ['Super Admin', 'School Admin', 'Invigilator'] },
     ]],
     ['Institution', [
       { id: 'schools', label: 'Schools', icon: 'school', role: ['Super Admin'] },
-      { id: 'departments', label: 'Departments', icon: 'layers' },
-      { id: 'student-groups', label: 'Student Groups', icon: 'users' },
-      { id: 'examinations', label: 'Examinations', icon: 'file' },
-      { id: 'calendar', label: 'Examination Calendar', icon: 'calendar' },
+      { id: 'departments', label: 'Departments', icon: 'layers', role: ['Super Admin', 'School Admin'] },
+      { id: 'student-groups', label: 'Student Groups', icon: 'users', role: ['Super Admin', 'School Admin'] },
+      { id: 'examinations', label: 'Examinations', icon: 'file', role: ['Super Admin', 'School Admin'] },
+      { id: 'calendar', label: 'Examination Calendar', icon: 'calendar', role: ['Super Admin', 'School Admin'] },
     ]],
     ['Resources', [
-      { id: 'rooms', label: 'Rooms Management', icon: 'door' },
-      { id: 'invigilators', label: 'Invigilators', icon: 'badgem' },
-      { id: 'availability', label: 'Faculty Availability', icon: 'clock' },
-      { id: 'time-slots', label: 'Time Slots', icon: 'clock' },
-      { id: 'policies', label: 'Constraints & Policies', icon: 'shield' },
+      { id: 'rooms', label: 'Rooms Management', icon: 'door', role: ['Super Admin', 'School Admin'] },
+      { id: 'invigilators', label: 'Invigilators', icon: 'badgem', role: ['Super Admin', 'School Admin'] },
+      { id: 'availability', label: 'Faculty Availability', icon: 'clock', role: ['Super Admin', 'School Admin'] },
+      { id: 'time-slots', label: 'Time Slots', icon: 'clock', role: ['Super Admin', 'School Admin'] },
+      { id: 'policies', label: 'Constraints & Policies', icon: 'shield', role: ['Super Admin', 'School Admin'] },
     ]],
     ['Scheduling', [
-      { id: 'generator', label: 'AI Timetable Generator', icon: 'spark' },
-      { id: 'timetable', label: 'Generated Timetable', icon: 'grid' },
-      { id: 'conflicts', label: 'Conflict Management', icon: 'warn' },
-      { id: 'fairness', label: 'Fairness Analysis', icon: 'scale' },
-      { id: 'comparison', label: 'Algorithm Comparison', icon: 'chart' },
+      { id: 'generator', label: 'AI Timetable Generator', icon: 'spark', role: ['Super Admin', 'School Admin'] },
+      { id: 'timetable', label: 'Generated Timetable', icon: 'grid', role: ['Super Admin', 'School Admin', 'Invigilator'] },
+      { id: 'conflicts', label: 'Conflict Management', icon: 'warn', role: ['Super Admin', 'School Admin'] },
+      { id: 'fairness', label: 'Fairness Analysis', icon: 'scale', role: ['Super Admin', 'School Admin'] },
+      { id: 'comparison', label: 'Algorithm Comparison', icon: 'chart', role: ['Super Admin', 'School Admin'] },
       { id: 'my-duties', label: 'My Duties', icon: 'badgem', role: ['Invigilator'] },
     ]],
     ['Administration', [
-      { id: 'reports', label: 'Reports & Analytics', icon: 'chart' },
-      { id: 'notifications', label: 'Notifications', icon: 'bell' },
+      { id: 'reports', label: 'Reports & Analytics', icon: 'chart', role: ['Super Admin', 'School Admin'] },
+      { id: 'notifications', label: 'Notifications', icon: 'bell', role: ['Super Admin', 'School Admin', 'Invigilator'] },
       { id: 'audit', label: 'Audit Logs', icon: 'history', role: ['Super Admin', 'School Admin'] },
       { id: 'users', label: 'User Management', icon: 'user', role: ['Super Admin'] },
-      { id: 'settings', label: 'Settings', icon: 'gear' },
+      { id: 'settings', label: 'Settings', icon: 'gear', role: ['Super Admin', 'School Admin', 'Invigilator'] },
     ]],
   ];
 
@@ -582,8 +582,25 @@
     }
   }
 
+  function navRoles(id) {
+    for (const [, items] of NAV) {
+      const item = items.find((entry) => entry.id === id);
+      if (item) return item.role || null;
+    }
+    return null;
+  }
+
+  function homeRoute() {
+    return App.state.user && App.state.user.role === 'Invigilator' ? 'my-duties' : 'dashboard';
+  }
+
   async function renderRoute() {
     const { id, params } = parseHash();
+    const allowed = navRoles(id);
+    if (allowed && App.state.user && !allowed.includes(App.state.user.role) && id !== homeRoute()) {
+      location.hash = '#/' + homeRoute();
+      return;
+    }
     const def = App.routes[id] || App.routes.dashboard;
     const view = document.getElementById('view');
     if (!view) return;
@@ -648,6 +665,7 @@
   }
 
   function renderLogin(message) {
+    document.title = 'Sign in · ExamFlow AI';
     if (loginPortal() === 'chooser') return renderPortalChooser(message);
     return renderPortalLogin(loginPortal(), message);
   }
@@ -726,6 +744,9 @@
         error.style.display = 'flex';
         submit.disabled = false;
         submit.textContent = 'Sign in';
+      } finally {
+        submit.disabled = false;
+        if (document.body.contains(submit)) submit.textContent = 'Sign in';
       }
     });
 
