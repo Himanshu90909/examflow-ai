@@ -413,7 +413,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 return self._send(200, api.report(conn, user, kind, query))
 
-            m = re.match(r"^/api/([a-z-]+)/([0-9a-zA-Z]+)$", path)
+            m = re.match(r"^/api/([a-z-]+)/([0-9a-zA-Z_]+)$", path)
             if m:
                 resource, record_id = m.groups()
                 if method == "GET":
