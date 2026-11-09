@@ -17,6 +17,8 @@ from email.message import EmailMessage
 
 RESEND_KEY = (os.environ.get("RESEND_API_KEY") or "").strip()
 SMTP_HOST = (os.environ.get("SMTP_HOST") or "").strip()
+if not SMTP_HOST and (os.environ.get("SMTP_USER") or "").lower().endswith(("@gmail.com", "@googlemail.com")):
+    SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = int(os.environ.get("SMTP_PORT") or 587)
 SMTP_USER = (os.environ.get("SMTP_USER") or "").strip()
 SMTP_PASSWORD = (os.environ.get("SMTP_PASSWORD") or "").strip()
