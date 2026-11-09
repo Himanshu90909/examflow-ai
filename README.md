@@ -306,6 +306,8 @@ with Postgres.
 
 Never commit a real `EXAMFLOW_SECRET`; set it as a Vercel environment variable.
 
+**Live demo:** https://examflow-ai-api.vercel.app (Vercel, SQLite in /tmp, reseeds on cold start)
+
 ## One-click deploy
 
 - Render: https://render.com/deploy?repo=https://github.com/yogesh9-max/examflow-ai

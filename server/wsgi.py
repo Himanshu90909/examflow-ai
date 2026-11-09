@@ -63,8 +63,28 @@ def _split_response(raw):
     return status, headers, body
 
 
+def _unwrap_path(environ):
+    """Vercel rewrites every request to /api/index, so the original path arrives in
+    a __p query parameter (see vercel.json). Restore it and drop the marker."""
+    query = environ.get("QUERY_STRING") or ""
+    if "__p=" not in query:
+        return environ
+    kept, original = [], None
+    for pair in query.split("&"):
+        if pair.startswith("__p="):
+            from urllib.parse import unquote
+            original = unquote(pair[4:])
+        elif pair:
+            kept.append(pair)
+    environ = dict(environ)
+    environ["PATH_INFO"] = original or "/"
+    environ["QUERY_STRING"] = "&".join(kept)
+    return environ
+
+
 def application(environ, start_response):
     """WSGI entry point."""
+    environ = _unwrap_path(environ)
     body = _build_environ_body(environ)
     raw = _raw_request(environ, body)
 
