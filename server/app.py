@@ -350,10 +350,23 @@ class Handler(BaseHTTPRequestHandler):
                                 traceback.print_exc()
                         elif sms.DEMO:
                             demo_code = code
+                elif sms.DEMO and not otp.recent_request_blocked(conn, "phone", phone):
+                    # Demonstration mode: no text can be sent, so refusing to issue a code
+                    # leaves the visitor staring at an empty form. Issue one and let the
+                    # verification step explain that the number has no staff account yet.
+                    code = otp.issue(conn, "phone", phone, portal)
+                    conn.commit()
+                    demo_code = code
                 payload = {"sent": True, "delivered": deliver, "phone": phone,
+                           "registered": known,
                            "expires_in": otp.CODE_TTL_MINUTES * 60}
                 if demo_code:
                     payload["demo_code"] = demo_code
+                if sms.DEMO and not known and portal != "student":
+                    payload["hint"] = (
+                        "This number is not linked to a staff account yet, so the code will be "
+                        "refused at the next step. Sign in with your password, or ask the "
+                        "examination office to add this number to your account.")
                 return self._send(200, payload)
 
             if method == "POST" and path == "/api/auth/verify-phone-code":

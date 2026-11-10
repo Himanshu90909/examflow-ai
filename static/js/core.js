@@ -879,13 +879,19 @@
         codeRow.style.display = '';
         code.focus();
         if (data.demo_code) {
+          code.value = data.demo_code;
+          code.select();
           show(note, 'Demonstration code for ' + data.phone + ': ' + data.demo_code
-            + '. It expires in 10 minutes.', 'warn');
+            + '. No text message is sent on this deployment, so it is filled in for you '
+            + 'already — press "Verify and sign in". It expires in 10 minutes.', 'warn');
         } else if (data.delivered) {
-          show(note, 'If that number belongs to an account here, a 6 digit code is on its way to '
-            + data.phone + '. It expires in 10 minutes.', 'ok');
+          show(note, 'A 6 digit code is on its way to ' + data.phone
+            + '. It expires in 10 minutes.', 'ok');
         } else {
           show(note, 'SMS delivery is not configured on this deployment yet.', 'warn');
+        }
+        if (data.hint) {
+          show(error, data.hint, 'info');
         }
       } catch (err) {
         show(error, err.message, 'err');

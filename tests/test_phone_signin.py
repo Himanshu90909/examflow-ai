@@ -167,6 +167,20 @@ class PhoneSignInTest(unittest.TestCase):
         self.assertTrue(payload["created"])
         self.assertTrue(saved, "the new phone account was never persisted")
 
+    def test_demo_mode_still_shows_a_code_for_an_unregistered_staff_number(self):
+        """Without an SMS gateway a refusal leaves the form empty, which reads as a failure."""
+        status, issued = self.call("/api/auth/request-phone-code",
+                                   {"phone": "9899000011", "portal": "admin"})
+        self.assertEqual(status, 200, issued)
+        self.assertFalse(issued["registered"])
+        self.assertIn("demo_code", issued)
+        self.assertIn("hint", issued)
+        status, payload = self.call("/api/auth/verify-phone-code",
+                                    {"phone": "9899000011", "portal": "admin",
+                                     "code": issued["demo_code"]})
+        self.assertEqual(status, 401)
+        self.assertIn("examination office", payload["error"])
+
     def test_unknown_number_cannot_reach_a_staff_portal(self):
         status, _ = self.call("/api/auth/request-phone-code",
                               {"phone": "9899999999", "portal": "admin"})
@@ -187,10 +201,13 @@ class PhoneSignInTest(unittest.TestCase):
     def test_student_cannot_use_the_admin_portal(self):
         _, issued = self.call("/api/auth/request-phone-code",
                               {"phone": "9000000011", "portal": "admin"})
-        self.assertNotIn("demo_code", issued)
+        # demonstration mode shows the code so the form is usable, and signs nobody in
+        self.assertIn("demo_code", issued)
         status, payload = self.call("/api/auth/verify-phone-code",
-                                    {"phone": "9000000011", "portal": "admin", "code": "123456"})
+                                    {"phone": "9000000011", "portal": "admin",
+                                     "code": issued["demo_code"]})
         self.assertEqual(status, 401)
+        self.assertIn("administrator portal", payload["error"].lower())
 
     def test_second_request_inside_a_minute_is_throttled(self):
         status, _ = self.call("/api/auth/request-phone-code",
