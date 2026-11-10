@@ -150,6 +150,23 @@ class PhoneSignInTest(unittest.TestCase):
         self.assertEqual(payload["user"]["phone"], "+919812345678")
         self.assertTrue(payload["user"]["email"].endswith("@students.examflow.local"))
 
+    def test_new_phone_account_is_snapshotted_before_the_token_is_returned(self):
+        import persistence
+        saved = []
+        original = persistence.save_now
+        persistence.save_now = lambda: saved.append(1) or True
+        try:
+            _, issued = self.call("/api/auth/request-phone-code",
+                                  {"phone": "9812300001", "portal": "student"})
+            status, payload = self.call("/api/auth/verify-phone-code",
+                                        {"phone": "9812300001", "portal": "student",
+                                         "code": issued["demo_code"]})
+        finally:
+            persistence.save_now = original
+        self.assertEqual(status, 200, payload)
+        self.assertTrue(payload["created"])
+        self.assertTrue(saved, "the new phone account was never persisted")
+
     def test_unknown_number_cannot_reach_a_staff_portal(self):
         status, _ = self.call("/api/auth/request-phone-code",
                               {"phone": "9899999999", "portal": "admin"})

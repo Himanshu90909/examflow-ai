@@ -164,6 +164,29 @@ class GoogleSignInTest(unittest.TestCase):
         self.assertEqual(row["email"], "new.student@example.com")
         self.assertEqual(row["role"], "Student")
 
+    def test_new_google_account_is_snapshotted_before_the_token_is_returned(self):
+        """The row must be durable before the browser uses the token.
+
+        The callback is a GET redirect, so it never passes through the write hook that
+        saves every other mutation; without an explicit save the token arrived at an
+        instance that had never seen the account and the visitor was logged straight
+        back out with "session expired".
+        """
+        import persistence
+        saved = []
+        original = persistence.save_now
+        persistence.save_now = lambda: saved.append(1) or True
+        try:
+            redirect_uri = self.origin + "/api/auth/google/callback"
+            state = google_auth.sign_state(redirect_uri + "|student")
+            status, location, body = self.request(
+                "/api/auth/google/callback?code=stub&state=" + state)
+        finally:
+            persistence.save_now = original
+        self.assertEqual(status, 302, body[:200])
+        self.assertIn("#google_token=", location)
+        self.assertTrue(saved, "the new account was never persisted")
+
     def test_bad_state_is_rejected_without_a_server_error(self):
         status, location, body = self.request("/api/auth/google/callback?code=stub&state=bogus")
         self.assertEqual(status, 302, body[:200])

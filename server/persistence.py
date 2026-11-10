@@ -111,7 +111,8 @@ def ensure_restored():
 
 
 _USER_CACHE = {}
-_USER_CACHE_TTL = 15.0
+_USER_CACHE_TTL = 30.0      # a user that exists in the snapshot rarely disappears
+_USER_CACHE_MISS_TTL = 5.0  # a miss may only mean the snapshot is a moment behind
 
 
 def fetch_user(user_id):
@@ -126,8 +127,10 @@ def fetch_user(user_id):
         return None
     import time as _time
     cached = _USER_CACHE.get(user_id)
-    if cached and (_time.time() - cached[0]) < _USER_CACHE_TTL:
-        return cached[1]
+    if cached:
+        ttl = _USER_CACHE_TTL if cached[1] else _USER_CACHE_MISS_TTL
+        if (_time.time() - cached[0]) < ttl:
+            return cached[1]
     row = None
     try:
         blob = _api("/repos/%s/contents/%s?ref=%s" % (REPO, SNAPSHOT_PATH, BRANCH))

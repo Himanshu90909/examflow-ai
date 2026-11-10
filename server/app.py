@@ -238,6 +238,10 @@ class Handler(BaseHTTPRequestHandler):
 
                 db.audit(conn, user, "User login (Google)", "user", user["id"])
                 conn.commit()
+                # A GET redirect cannot pass through the write hook in _send, so a
+                # brand-new Google account has to be snapshotted right here; otherwise
+                # the token reaches an instance whose database has never seen the user.
+                persistence.save_now()
                 return self._redirect(site + "/#google_token=" + quote(auth.make_token(user)))
 
             if method == "POST" and path == "/api/auth/request-code":
@@ -381,6 +385,8 @@ class Handler(BaseHTTPRequestHandler):
                 db.audit(conn, user, "User login (phone code)", "user", user["id"],
                          "Portal: %s · %s" % (portal or "default", sms.display(phone)))
                 conn.commit()
+                if created:
+                    persistence.save_now()
                 return self._send(200, {"token": auth.make_token(user), "user": user,
                                         "created": created})
 
