@@ -1,8 +1,35 @@
 # ExamFlow AI
 
-Multi-school examination scheduling with a real constraint-programming engine, a production rule
-system, an independent validator and explainable decisions. Every screen reads and writes persistent
-data; nothing is mocked.
+Examination scheduling for **Lovely Professional University**: a real constraint-programming engine, a
+production rule system, an independent validator and explainable decisions. Every screen reads and
+writes persistent data; nothing is mocked.
+
+The engine is generic and the university is configuration. The seeded dataset speaks the campus
+vocabulary a reviewer recognises: schools `SCSE` / `SEEE` / `LFBA`, B.Tech and BBA student groups,
+block-and-room venues such as `34-401` in Block 34, and course codes like `CSE205`. Every person in it
+is fictional.
+
+### Serving a different university
+
+No page hard-codes a university. These variables drive the masthead, the sign-in screen, the document
+titles and the seeded wording:
+
+| Variable | Default |
+| --- | --- |
+| `EXAMFLOW_INSTITUTION` | `Lovely Professional University` |
+| `EXAMFLOW_INSTITUTION_SHORT` | `LPU` |
+| `EXAMFLOW_EXAM_OFFICE` | `Division of Examination` |
+| `EXAMFLOW_INSTITUTION_ADDRESS` | `Jalandhar - Delhi G.T. Road, Phagwara, Punjab 144411` |
+| `EXAMFLOW_INSTITUTION_PHONE` / `_EMAIL` | `+91 1824 404404` / `examination.office@lpu.co.in` |
+| `EXAMFLOW_TERM_NAME` | `Term End Examination` |
+| `EXAMFLOW_SESSION` | `2026-27` |
+
+A deployment seeded before this identity existed still shows the old generic rows. Re-cut them in
+place, keeping every identifier other tables point at (safe to run more than once, Super Admin only):
+
+```bash
+curl -X POST <origin>/api/institution/retheme -H "Authorization: Bearer <super admin token>"
+```
 
 Built with the Python standard library (SQLite + `http.server`) and a dependency-free frontend, so it
 runs anywhere Python 3.9+ exists.

@@ -1,6 +1,8 @@
-"""Realistic demonstration dataset for ExamFlow AI.
+"""Demonstration dataset for Lovely Professional University.
 
-All names are fictional. The data is intentionally seeded with the awkward cases
+The academic structure (schools, programmes, block-and-room venues, course codes) follows
+the university's own vocabulary. Every person is fictional and every address inside the
+campus is illustrative. The data is intentionally seeded with the awkward cases
 the engine must handle: a room that is too small for every examination in its
 school, several examinations sharing a student group, faculty on leave, and very
 different duty limits.
@@ -14,12 +16,15 @@ def seed_dataset(conn):
     now = db.now_iso()
 
     schools = [
-        ("Northfield Institute of Technology", "NIT", "12 College Road, Northfield",
-         "office@nit.example.edu", "+91 11 4000 1001"),
-        ("Riverside College of Science", "RCS", "48 River Lane, Riverside",
-         "admin@rcs.example.edu", "+91 11 4000 1002"),
-        ("Greenfield Business School", "GBS", "7 Green Park, Greenfield",
-         "hello@gbs.example.edu", "+91 11 4000 1003"),
+        ("School of Computer Science and Engineering", "SCSE",
+         "Block 34, Jalandhar - Delhi G.T. Road, Phagwara, Punjab 144411",
+         "examinations@lpu.co.in", "+91 1824 404404"),
+        ("School of Electronics and Electrical Engineering", "SEEE",
+         "Block 32, Jalandhar - Delhi G.T. Road, Phagwara, Punjab 144411",
+         "examinations@lpu.co.in", "+91 1824 404404"),
+        ("Lovely Faculty of Business and Arts", "LFBA",
+         "Block 26, Jalandhar - Delhi G.T. Road, Phagwara, Punjab 144411",
+         "examinations@lpu.co.in", "+91 1824 404404"),
     ]
     sids = {}
     for name, code, address, email, phone in schools:
@@ -31,11 +36,11 @@ def seed_dataset(conn):
             (sid, name, code, address, email, phone, "Active", now))
 
     depts = [
-        (sids["NIT"], "Computer Science", "CSE"),
-        (sids["NIT"], "Electronics", "ECE"),
-        (sids["RCS"], "Physics", "PHY"),
-        (sids["RCS"], "Mathematics", "MAT"),
-        (sids["GBS"], "Management", "MGT"),
+        (sids["SCSE"], "Computer Science and Engineering", "CSE"),
+        (sids["SCSE"], "Data Science and Artificial Intelligence", "DSC"),
+        (sids["SEEE"], "Electronics and Communication Engineering", "ECE"),
+        (sids["SEEE"], "Electrical and Electronics Engineering", "EEE"),
+        (sids["LFBA"], "Management", "MGT"),
     ]
     dids = {}
     for school_id, name, code in depts:
@@ -48,9 +53,9 @@ def seed_dataset(conn):
     groups = [
         ("B.Tech CSE Sem 5", 5, "A", 60, "CSE"), ("B.Tech CSE Sem 5", 5, "B", 55, "CSE"),
         ("B.Tech CSE Sem 3", 3, "A", 58, "CSE"), ("B.Tech ECE Sem 5", 5, "A", 45, "ECE"),
-        ("B.Tech ECE Sem 3", 3, "A", 40, "ECE"), ("BSc Physics Sem 4", 4, "A", 35, "PHY"),
-        ("BSc Mathematics Sem 4", 4, "A", 40, "MAT"), ("BSc Mathematics Sem 6", 6, "A", 30, "MAT"),
-        ("BBA Sem 2", 2, "A", 50, "MGT"), ("BBA Sem 4", 4, "A", 48, "MGT"),
+        ("B.Tech ECE Sem 3", 3, "A", 40, "ECE"), ("B.Tech DSAI Sem 3", 3, "A", 42, "DSC"),
+        ("B.Tech DSAI Sem 5", 5, "A", 38, "DSC"), ("B.Tech EEE Sem 4", 4, "A", 36, "EEE"),
+        ("MBA Sem 2", 2, "A", 50, "MGT"), ("BBA Sem 4", 4, "A", 48, "MGT"),
     ]
     gids = {}
     for name, sem, section, count, dept in groups:
@@ -64,17 +69,17 @@ def seed_dataset(conn):
              dids[dept], name, sem, section, count, "2026-27", now))
 
     rooms = [
-        ("N-101", "Main Block", 1, 120, "Computer Lab", 1, ["computer lab", "projector"]),
-        ("N-102", "Main Block", 1, 120, "Exam Hall", 1, ["projector"]),
-        ("N-204", "Academic Block", 2, 90, "Classroom", 1, []),
-        ("R-201", "Science Block", 2, 60, "Classroom", 1, []),
-        ("R-202", "Science Block", 2, 100, "Exam Hall", 1, ["projector"]),
-        ("R-305", "Science Block", 3, 25, "Seminar Room", 1, []),
-        ("G-01", "Business Block", 1, 120, "Exam Hall", 1, ["projector"]),
-        ("G-02", "Business Block", 1, 45, "Classroom", 1, []),
+        ("34-401", "Block 34", 4, 120, "Computer Lab", 1, ["computer lab", "projector"]),
+        ("34-402", "Block 34", 4, 120, "Examination Hall", 1, ["projector"]),
+        ("34-403", "Block 34", 4, 90, "Classroom", 1, []),
+        ("32-305", "Block 32", 3, 60, "Classroom", 1, []),
+        ("32-306", "Block 32", 3, 100, "Examination Hall", 1, ["projector"]),
+        ("32-401", "Block 32", 4, 25, "Seminar Room", 1, []),
+        ("26-201", "Block 26", 2, 120, "Examination Hall", 1, ["projector"]),
+        ("26-202", "Block 26", 2, 45, "Classroom", 1, []),
     ]
-    room_schools = [sids["NIT"], sids["NIT"], sids["NIT"], sids["RCS"], sids["RCS"], sids["RCS"],
-                    sids["GBS"], sids["GBS"]]
+    room_schools = [sids["SCSE"], sids["SCSE"], sids["SCSE"], sids["SEEE"], sids["SEEE"],
+                    sids["SEEE"], sids["LFBA"], sids["LFBA"]]
     for (number, building, floor, capacity, rtype, accessible, facilities), school_id in zip(
             rooms, room_schools):
         conn.execute(
@@ -92,36 +97,36 @@ def seed_dataset(conn):
         return sum(group_size[k] for k in keys)
 
     exams = [
-        ("Data Structures", "CS301", sids["NIT"], dids["CSE"], ["B.Tech CSE Sem 5-A", "B.Tech CSE Sem 3-A"],
-         180, "High", ["computer lab"], "2026-11-16"),
-        ("Operating Systems", "CS302", sids["NIT"], dids["CSE"], ["B.Tech CSE Sem 5-A", "B.Tech CSE Sem 5-B"],
-         180, "Critical", [], "2026-11-16"),
-        ("Digital Electronics", "EC301", sids["NIT"], dids["ECE"], ["B.Tech ECE Sem 5-A", "B.Tech ECE Sem 3-A"],
-         120, "Medium", [], "2026-11-17"),
-        ("Microprocessors", "EC302", sids["NIT"], dids["ECE"], ["B.Tech ECE Sem 5-A"],
-         120, "Low", [], "2026-11-18"),
-        ("Discrete Mathematics", "MA201", sids["NIT"], dids["CSE"],
+        ("Data Structures", "CSE205", sids["SCSE"], dids["CSE"],
+         ["B.Tech CSE Sem 5-A", "B.Tech CSE Sem 3-A"], 180, "High", ["computer lab"], "2026-11-16"),
+        ("Operating Systems", "CSE310", sids["SCSE"], dids["CSE"],
+         ["B.Tech CSE Sem 5-A", "B.Tech CSE Sem 5-B"], 180, "Critical", [], "2026-11-16"),
+        ("Software Engineering", "CSE315", sids["SCSE"], dids["CSE"],
+         ["B.Tech CSE Sem 5-B"], 180, "Medium", [], "2026-11-19"),
+        ("Computer Networks", "CSE320", sids["SCSE"], dids["CSE"],
+         ["B.Tech CSE Sem 5-A"], 180, "Medium", [], "2026-11-20"),
+        ("Discrete Mathematics", "MTH201", sids["SCSE"], dids["CSE"],
          ["B.Tech CSE Sem 3-A", "B.Tech CSE Sem 5-B"], 180, "High", [], "2026-11-18"),
-        ("Software Engineering", "CS303", sids["NIT"], dids["CSE"], ["B.Tech CSE Sem 5-B"],
-         180, "Medium", [], "2026-11-19"),
-        ("Classical Mechanics", "PH401", sids["RCS"], dids["PHY"], ["BSc Physics Sem 4-A"],
-         120, "High", [], "2026-11-16"),
-        ("Quantum Physics", "PH402", sids["RCS"], dids["PHY"], ["BSc Physics Sem 4-A"],
-         120, "Medium", [], "2026-11-18"),
-        ("Real Analysis", "MA401", sids["RCS"], dids["MAT"], ["BSc Mathematics Sem 4-A"],
-         180, "Critical", [], "2026-11-17"),
-        ("Linear Algebra", "MA402", sids["RCS"], dids["MAT"],
-         ["BSc Mathematics Sem 4-A", "BSc Mathematics Sem 6-A"], 120, "Medium", [], "2026-11-19"),
-        ("Numerical Methods", "MA403", sids["RCS"], dids["MAT"], ["BSc Mathematics Sem 6-A"],
-         120, "Low", [], "2026-11-20"),
-        ("Marketing Management", "BA201", sids["GBS"], dids["MGT"], ["BBA Sem 2-A"],
-         180, "High", ["projector"], "2026-11-16"),
-        ("Financial Accounting", "BA202", sids["GBS"], dids["MGT"], ["BBA Sem 2-A", "BBA Sem 4-A"],
-         180, "Critical", [], "2026-11-17"),
-        ("Business Statistics", "BA203", sids["GBS"], dids["MGT"], ["BBA Sem 4-A"],
-         120, "Medium", [], "2026-11-19"),
-        ("Organisational Behaviour", "BA204", sids["GBS"], dids["MGT"], ["BBA Sem 4-A"],
-         120, "Low", [], "2026-11-20"),
+        ("Machine Learning", "DSC301", sids["SCSE"], dids["DSC"],
+         ["B.Tech DSAI Sem 5-A"], 120, "High", [], "2026-11-17"),
+        ("Data Mining", "DSC305", sids["SCSE"], dids["DSC"],
+         ["B.Tech DSAI Sem 3-A"], 120, "Medium", [], "2026-11-19"),
+        ("Digital Electronics", "ECE205", sids["SEEE"], dids["ECE"],
+         ["B.Tech ECE Sem 5-A", "B.Tech ECE Sem 3-A"], 120, "Medium", [], "2026-11-17"),
+        ("Microprocessors", "ECE310", sids["SEEE"], dids["ECE"],
+         ["B.Tech ECE Sem 5-A"], 120, "Low", [], "2026-11-18"),
+        ("Electrical Machines", "EEE210", sids["SEEE"], dids["EEE"],
+         ["B.Tech EEE Sem 4-A"], 120, "High", [], "2026-11-16"),
+        ("Power Systems", "EEE320", sids["SEEE"], dids["EEE"],
+         ["B.Tech EEE Sem 4-A"], 120, "Critical", [], "2026-11-20"),
+        ("Marketing Management", "MGT201", sids["LFBA"], dids["MGT"],
+         ["MBA Sem 2-A"], 180, "High", ["projector"], "2026-11-16"),
+        ("Financial Accounting", "MGT202", sids["LFBA"], dids["MGT"],
+         ["MBA Sem 2-A", "BBA Sem 4-A"], 180, "Critical", [], "2026-11-17"),
+        ("Business Statistics", "MGT203", sids["LFBA"], dids["MGT"],
+         ["BBA Sem 4-A"], 120, "Medium", [], "2026-11-19"),
+        ("Organisational Behaviour", "MGT204", sids["LFBA"], dids["MGT"],
+         ["BBA Sem 4-A"], 120, "Low", [], "2026-11-20"),
     ]
     for (subject, code, school_id, dept_id, group_keys, duration, priority, facilities,
          preferred) in exams:
@@ -130,7 +135,7 @@ def seed_dataset(conn):
                examination_type, student_group_ids, duration_minutes, priority, preferred_dates,
                required_seating_capacity, required_facilities, special_requirements, status, created_at)
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (db.new_id(), school_id, dept_id, subject, code, "Written",
+            (db.new_id(), school_id, dept_id, subject, code, "Theory",
              db.encode_value([gids[k] for k in group_keys]), duration, priority,
              db.encode_value([preferred]), capacity_of(group_keys),
              db.encode_value(facilities), "", "Pending", now))
@@ -144,18 +149,18 @@ def seed_dataset(conn):
                 (db.new_id(), day, start, end, session, 1, now))
 
     faculty = [
-        ("Dr. Ananya Rao", "NIT-F01", sids["NIT"], dids["CSE"], 2, 10, 5, "CSP"),
-        ("Prof. Vikram Shetty", "NIT-F02", sids["NIT"], dids["CSE"], 2, 9, 5, "Databases"),
-        ("Dr. Meera Nair", "NIT-F03", sids["NIT"], dids["ECE"], 1, 6, 3, "VLSI"),
-        ("Prof. Arjun Das", "NIT-F04", sids["NIT"], dids["ECE"], 2, 8, 4, "Signals"),
-        ("Dr. Kavya Iyer", "NIT-F05", sids["NIT"], dids["CSE"], 1, 5, 3, "Compilers"),
-        ("Prof. Suresh Menon", "NIT-F06", sids["NIT"], dids["CSE"], 2, 10, 5, "Networks"),
-        ("Dr. Ritu Bansal", "RCS-F07", sids["RCS"], dids["PHY"], 2, 9, 5, "Optics"),
-        ("Prof. Nikhil Joshi", "RCS-F08", sids["RCS"], dids["MAT"], 1, 6, 3, "Algebra"),
-        ("Dr. Farah Khan", "RCS-F09", sids["RCS"], dids["PHY"], 2, 8, 4, "Thermodynamics"),
-        ("Prof. Aditya Verma", "RCS-F10", sids["RCS"], dids["MAT"], 2, 9, 4, "Analysis"),
-        ("Dr. Shalini Gupta", "GBS-F11", sids["GBS"], dids["MGT"], 2, 8, 4, "Marketing"),
-        ("Prof. Manoj Pillai", "GBS-F12", sids["GBS"], dids["MGT"], 1, 5, 3, "Accounting"),
+        ("Dr. Ananya Rao", "SCSE-1042", sids["SCSE"], dids["CSE"], 2, 10, 5, "CSP"),
+        ("Prof. Vikram Shetty", "SCSE-1088", sids["SCSE"], dids["CSE"], 2, 9, 5, "Databases"),
+        ("Dr. Meera Nair", "SCSE-1123", sids["SCSE"], dids["DSC"], 1, 6, 3, "Deep learning"),
+        ("Dr. Kavya Iyer", "SCSE-1156", sids["SCSE"], dids["CSE"], 1, 5, 3, "Compilers"),
+        ("Prof. Suresh Menon", "SCSE-1190", sids["SCSE"], dids["DSC"], 2, 10, 5, "Networks"),
+        ("Dr. Ritu Bansal", "SEEE-2031", sids["SEEE"], dids["ECE"], 2, 9, 5, "VLSI"),
+        ("Prof. Arjun Das", "SEEE-2054", sids["SEEE"], dids["ECE"], 2, 8, 4, "Signals"),
+        ("Prof. Nikhil Joshi", "SEEE-2077", sids["SEEE"], dids["EEE"], 1, 6, 3, "Machines"),
+        ("Dr. Farah Khan", "SEEE-2098", sids["SEEE"], dids["EEE"], 2, 8, 4, "Power"),
+        ("Dr. Shalini Gupta", "LFBA-3015", sids["LFBA"], dids["MGT"], 2, 8, 4, "Marketing"),
+        ("Prof. Manoj Pillai", "LFBA-3026", sids["LFBA"], dids["MGT"], 1, 5, 3, "Accounting"),
+        ("Dr. Sanjana Kulkarni", "LFBA-3041", sids["LFBA"], dids["MGT"], 2, 9, 4, "Statistics"),
     ]
     inv_ids = {}
     for name, code, school_id, dept_id, max_daily, max_total, preferred, qual in faculty:
@@ -166,16 +171,16 @@ def seed_dataset(conn):
                email, maximum_daily_duties, maximum_total_duties, preferred_duties, qualification,
                status, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (iid, None, school_id, dept_id, code, name,
-             name.split()[-1].lower() + "@example.edu", max_daily, max_total, preferred, qual,
+             name.split()[-1].lower() + "@lpu.co.in", max_daily, max_total, preferred, qual,
              "Active", now))
 
     restrictions = [
-        ("NIT-F03", "2026-11-16", "09:00", "13:00", "Unavailable", "Medical appointment"),
-        ("RCS-F08", "2026-11-17", "00:00", "23:59", "Leave", "Approved leave"),
-        ("RCS-F09", "2026-11-19", "13:00", "18:00", "Unavailable", "Conference presentation"),
-        ("GBS-F12", "2026-11-18", "00:00", "23:59", "Leave", "Family leave"),
-        ("NIT-F04", "2026-11-20", "09:00", "12:45", "Unavailable", "Doctor visit"),
-        ("NIT-F01", "2026-11-19", "13:00", "17:30", "Unavailable", "Department review"),
+        ("SCSE-1123", "2026-11-16", "09:00", "13:00", "Unavailable", "Medical appointment"),
+        ("SEEE-2077", "2026-11-17", "00:00", "23:59", "Leave", "Approved leave"),
+        ("SEEE-2054", "2026-11-18", "09:00", "12:45", "Unavailable", "Doctor visit"),
+        ("SEEE-2098", "2026-11-19", "13:00", "18:00", "Unavailable", "Conference presentation"),
+        ("LFBA-3026", "2026-11-18", "00:00", "23:59", "Leave", "Family leave"),
+        ("SCSE-1042", "2026-11-19", "13:00", "17:30", "Unavailable", "School review"),
     ]
     for code, date, start, end, status, reason in restrictions:
         conn.execute(
@@ -209,9 +214,9 @@ def seed_dataset(conn):
 
     users = [
         ("System Administrator", "admin@examflow.ai", "Admin@123", "Super Admin", None, None, "9000000001"),
-        ("Rita Sharma", "rita@examflow.ai", "Examflow@123", "School Admin", sids["NIT"], dids["CSE"], "9000000002"),
-        ("Samuel Fernandes", "samuel@examflow.ai", "Examflow@123", "School Admin", sids["RCS"], dids["MAT"], "9000000003"),
-        ("Dr. Ananya Rao", "ananya@examflow.ai", "Examflow@123", "Invigilator", sids["NIT"], dids["CSE"], "9000000004"),
+        ("Rita Sharma", "rita@examflow.ai", "Examflow@123", "School Admin", sids["SCSE"], dids["CSE"], "9000000002"),
+        ("Samuel Fernandes", "samuel@examflow.ai", "Examflow@123", "School Admin", sids["LFBA"], dids["MGT"], "9000000003"),
+        ("Dr. Ananya Rao", "ananya@examflow.ai", "Examflow@123", "Invigilator", sids["SCSE"], dids["CSE"], "9000000004"),
     ]
     for full_name, email, password, role, school_id, dept_id, phone in users:
         conn.execute(

@@ -18,6 +18,8 @@ import auth
 import api
 import persistence
 import google_auth
+import institution
+import retheme
 import mailer
 import otp
 import sms
@@ -196,7 +198,8 @@ class Handler(BaseHTTPRequestHandler):
                                         "otp": mailer.ENABLED,
                                         "phone": sms.available(),
                                         "phone_demo": sms.DEMO and not sms.ENABLED,
-                                        "mode": AUTH_MODE})
+                                        "mode": AUTH_MODE,
+                                        "institution": institution.public()})
 
             if method == "GET" and path == "/api/auth/google/start":
                 if not google_auth.ENABLED:
@@ -607,6 +610,11 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 return self._send(200, api.report(conn, user, kind, query))
 
+            if method == "POST" and path == "/api/institution/retheme":
+                if user["role"] != "Super Admin":
+                    raise auth.Forbidden("Only a Super Admin may re-cut the dataset")
+                return self._send(200, retheme.apply(conn))
+
             m = re.match(r"^/api/([a-z-]+)/([0-9a-zA-Z_]+)$", path)
             if m:
                 resource, record_id = m.groups()
@@ -680,6 +688,15 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     port = int(os.environ.get("PORT") or 8000)
     db.init_db(seed=os.environ.get("EXAMFLOW_SEED", "1") != "0")
+    if os.environ.get("EXAMFLOW_RETHEME", "1") != "0":
+        try:
+            conn = db.connect()
+            try:
+                retheme.apply(conn)
+            finally:
+                conn.close()
+        except Exception:  # pragma: no cover - cosmetic only
+            pass
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     print(f"ExamFlow AI running on http://localhost:{port}")
     print("Demo logins: admin@examflow.ai / Admin@123  ·  rita@examflow.ai / Examflow@123")

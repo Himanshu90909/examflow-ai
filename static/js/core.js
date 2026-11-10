@@ -488,19 +488,35 @@
       .filter(([, items]) => items.length);
   }
 
+  /* Branding comes from the server so one build can serve any university. */
+  function inst() {
+    const published = (App.state.providers && App.state.providers.institution) || {};
+    return {
+      product: published.product || 'ExamFlow AI',
+      name: published.name || 'Lovely Professional University',
+      short: published.short || 'LPU',
+      office: published.office || 'Division of Examination',
+      address: published.address || '',
+      phone: published.phone || '',
+      email: published.email || '',
+      term: published.term || 'Term End Examination',
+      session: published.session || '2026-27',
+    };
+  }
+
   function buildShell() {
     const root = document.getElementById('root');
     root.innerHTML = '';
     const sidebar = h('aside', { class: 'sidebar', id: 'sidebar' },
       h('div', { class: 'brand' },
-        h('div', { class: 'brand-mark', text: 'E' }),
+        h('div', { class: 'brand-mark', text: inst().short }),
         h('div', null,
-          h('div', { class: 'brand-name', text: 'ExamFlow AI' }),
-          h('div', { class: 'brand-sub', text: 'Examination scheduling' }))),
+          h('div', { class: 'brand-name', text: inst().product }),
+          h('div', { class: 'brand-sub', text: inst().name }))),
       h('nav', { class: 'nav', id: 'nav' }),
       h('div', { class: 'sidebar-foot' },
-        h('div', { text: 'Academic session 2026-27' }),
-        h('div', { style: 'margin-top:4px', text: 'AI · CSP · CP-SAT ready' })));
+        h('div', { text: 'Academic session ' + inst().session }),
+        h('div', { style: 'margin-top:4px', text: inst().office })));
 
     const searchInput = inputEl({ placeholder: 'Search examinations, rooms, faculty…', 'aria-label': 'Global search' });
     searchInput.addEventListener('keydown', (e) => {
@@ -614,7 +630,7 @@
       view.appendChild(h('div', { class: 'empty' }, h('strong', { text: 'Page not found' })));
       return;
     }
-    document.title = `${def.title} · ExamFlow AI`;
+    document.title = `${def.title} · ${inst().product}`;
     try {
       await def.render(view, params);
     } catch (err) {
@@ -678,13 +694,21 @@
 
   function brandHead() {
     return h('div', { class: 'brand', style: 'padding:0;border:0' },
-      h('div', { class: 'brand-mark', text: 'E' }),
-      h('div', null, h('div', { class: 'brand-name', text: 'ExamFlow AI' }),
-        h('div', { class: 'brand-sub', text: 'Multi-school examination planning' })));
+      h('div', { class: 'brand-mark', text: inst().short }),
+      h('div', null, h('div', { class: 'brand-name', text: inst().name }),
+        h('div', { class: 'brand-sub', text: inst().office + ' \u00B7 ' + inst().product })));
+  }
+
+  /* The university's own contact block, shown under the sign-in masthead. */
+  function institutionFoot() {
+    const parts = [inst().address, inst().phone, inst().email].filter(Boolean);
+    return h('div', { class: 'inst-foot' },
+      h('div', { class: 'inst-term', text: inst().term + ' \u00B7 Session ' + inst().session }),
+      parts.length ? h('div', { text: parts.join(' \u00B7 ') }) : null);
   }
 
   function renderLogin(message) {
-    document.title = 'Sign in · ExamFlow AI';
+    document.title = 'Sign in · ' + inst().short;
     if (loginPortal() === 'chooser') return renderPortalChooser(message);
     return renderPortalLogin(loginPortal(), message);
   }
@@ -702,7 +726,7 @@
           point('Separate sign-in pages for administration and staff'),
           point('Role separation enforced on the server, not just the menu'),
           point('Every decision stored for audit')),
-        h('div', { class: 'small', style: 'margin-top:auto;color:#94a3b8', text: 'Demonstration build · fictional data' })),
+        institutionFoot()),
       h('div', { class: 'login-form-wrap' },
         h('div', { class: 'login-form' },
           h('h1', { text: 'Choose your portal' }),
@@ -1052,7 +1076,7 @@
         h('h2', { text: cfg.lead }),
         h('p', { text: cfg.body }),
         h('div', { class: 'login-points' }, cfg.points.map(point)),
-        h('div', { class: 'small', style: 'margin-top:auto;color:#94a3b8', text: 'Demonstration build \u00b7 fictional data' })),
+        institutionFoot()),
       h('div', { class: 'login-form-wrap' }, form)));
   }
 
