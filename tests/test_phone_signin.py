@@ -49,7 +49,7 @@ class PhoneSignInTest(unittest.TestCase):
     def setUpClass(cls):
         db.init_db(seed=False)
         conn = db.connect()
-        conn.execute("INSERT INTO schools (id, school_name, school_code, status, created_at)"
+        conn.execute("INSERT OR IGNORE INTO schools (id, school_name, school_code, status, created_at)"
                      " VALUES ('sch_1','Test School','TS1','Active',?)", (db.now_iso(),))
         conn.execute(
             "INSERT INTO users (id, full_name, email, password_hash, role, school_id, phone,"
@@ -189,6 +189,52 @@ class PhoneSignInTest(unittest.TestCase):
                                     {"phone": "12", "portal": "student"})
         self.assertEqual(status, 422)
         self.assertIn("phone number", payload["error"].lower())
+
+
+class PhoneFieldTest(unittest.TestCase):
+    """The users record is where a staff number is put on file."""
+
+    def setUp(self):
+        db.init_db(seed=False)
+        conn = db.connect()
+        conn.execute("DELETE FROM users")
+        conn.execute("INSERT OR IGNORE INTO schools (id, school_name, school_code, status, created_at)"
+                     " VALUES ('sch_1','Test School','TS1','Active',?)", (db.now_iso(),))
+        conn.commit()
+        self.conn = conn
+        self.admin = {"id": "u_admin", "role": "Super Admin", "school_id": None,
+                      "full_name": "Admin", "email": "admin@example.com"}
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_phone_is_stored_in_one_shape(self):
+        import api
+
+        record = api.create_resource(self.conn, self.admin, "users",
+                                     {"full_name": "Rita", "email": "rita@example.com",
+                                      "role": "School Admin", "phone": "+91 98765 43210"})
+        self.assertEqual(record["phone"], "+919876543210")
+        self.assertEqual(auth.find_user_by_phone("09876543210")["email"], "rita@example.com")
+
+        api.update_resource(self.conn, self.admin, "users", record["id"],
+                            {"phone": "9876543211"})
+        self.assertEqual(auth.find_user_by_phone("+91 98765 43211")["email"], "rita@example.com")
+
+    def test_junk_and_blank_numbers(self):
+        import api
+
+        record = api.create_resource(self.conn, self.admin, "users",
+                                     {"full_name": "Samuel", "email": "sam@example.com",
+                                      "role": "Invigilator"})
+        self.assertIsNone(record["phone"])
+        with self.assertRaises(auth.ValidationError):
+            api.update_resource(self.conn, self.admin, "users", record["id"], {"phone": "abc"})
+        cleared = api.update_resource(self.conn, self.admin, "users", record["id"],
+                                      {"phone": "+91 90000 00009"})
+        self.assertEqual(cleared["phone"], "+919000000009")
+        cleared = api.update_resource(self.conn, self.admin, "users", record["id"], {"phone": ""})
+        self.assertIsNone(cleared["phone"])
 
 
 if __name__ == "__main__":

@@ -712,6 +712,7 @@
     columns: () => [
       { key: 'full_name', label: 'Name' },
       { key: 'email', label: 'Email' },
+      { key: 'phone', label: 'Phone', render: (r) => r.phone || '\u2014' },
       { key: 'role', label: 'Role', render: (r) => pill(r.role, r.role === 'Super Admin' ? 'blue' : r.role === 'School Admin' ? 'green' : 'grey') },
       { key: 'school_id', label: 'School', render: (r) => (r.school_id ? schoolName(r.school_id) : 'All schools') },
       { key: 'is_active', label: 'Active', render: (r) => statusPill(r.is_active ? 'Active' : 'Inactive') },
@@ -721,6 +722,8 @@
     fields: (record) => [
       { name: 'full_name', label: 'Full name' },
       { name: 'email', label: 'Email', type: 'email' },
+      { name: 'phone', label: 'Phone number', type: 'tel',
+        help: 'Optional. With a number on file this user can sign in by texted code. Use the country code, e.g. +91 90000 00001.' },
       { name: 'role', label: 'Role', type: 'select', options: meta().roles },
       { name: 'school_id', label: 'School', type: 'select', options: [{ value: '', label: 'All schools (Super Admin)' }, ...optSchools()] },
       { name: 'department_id', label: 'Department', type: 'select', options: [{ value: '', label: 'None' }, ...optDepts()] },

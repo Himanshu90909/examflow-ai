@@ -168,6 +168,27 @@ def get_resource(conn, user, resource, record_id):
     return record
 
 
+def _normalise_phone(body):
+    """Store phone numbers in one shape so sign-in can match them.
+
+    A blank value clears the number. Anything unparseable is refused with a
+    readable message instead of being written as-is.
+    """
+    if "phone" not in body:
+        return body
+    raw = (body.get("phone") or "").strip()
+    if not raw:
+        body["phone"] = None
+        return body
+    import sms
+
+    try:
+        body["phone"] = sms.normalize(raw)
+    except ValueError as exc:
+        raise auth.ValidationError(str(exc))
+    return body
+
+
 def create_resource(conn, user, resource, body):
     if not auth.can_write(user, resource):
         raise auth.Forbidden("Your role cannot create this record")
@@ -178,6 +199,7 @@ def create_resource(conn, user, resource, body):
     if resource == "users":
         password = body.pop("password", None) or "Examflow@123"
         body["password_hash"] = auth.hash_password(password)
+        body = _normalise_phone(body)
     data = _clean(table, body, conn)
     data["id"] = db.new_id()
     data["created_at"] = db.now_iso()
@@ -201,6 +223,8 @@ def update_resource(conn, user, resource, record_id, body):
     _validate(conn, user, resource, body, creating=False)
     if resource == "users" and body.get("password"):
         body["password_hash"] = auth.hash_password(body.pop("password"))
+    if resource == "users":
+        body = _normalise_phone(body)
     data = _clean(table, body, conn)
     if resource == "users" and body.get("password_hash"):
         data["password_hash"] = body["password_hash"]
