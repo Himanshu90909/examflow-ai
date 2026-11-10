@@ -170,6 +170,7 @@ class Handler(BaseHTTPRequestHandler):
                     "db_path": db.DB_PATH,
                     "db_bytes": os.path.getsize(db.DB_PATH) if os.path.exists(db.DB_PATH) else 0,
                     "incidents": list(INCIDENTS),
+                    "persistence": persistence.status(),
                 })
 
             if method == "GET" and path == "/api/auth/providers":

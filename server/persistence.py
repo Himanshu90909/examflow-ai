@@ -36,6 +36,7 @@ DB_PATH = os.environ.get("EXAMFLOW_DB") or os.path.join(
 _lock = threading.RLock()
 _restored = False
 _last_digest = None
+LAST_SAVE = {"at": None, "ok": None, "error": None, "saved": 0}
 
 
 class SnapshotError(Exception):
@@ -154,6 +155,26 @@ def fetch_user(user_id):
     return row
 
 
+def _note_save(ok, error):
+    import time as _time
+    LAST_SAVE["at"] = _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime())
+    LAST_SAVE["ok"] = ok
+    LAST_SAVE["error"] = error
+    if ok:
+        LAST_SAVE["saved"] = LAST_SAVE.get("saved", 0) + 1
+
+
+def status():
+    """Whether writes are being persisted, and how the last attempt went."""
+    return {
+        "enabled": ENABLED,
+        "repo": REPO or None,
+        "branch": BRANCH if ENABLED else None,
+        "path": SNAPSHOT_PATH if ENABLED else None,
+        "restored": _restored,
+        "last_save": dict(LAST_SAVE),
+    }
+
 def save_now():
     """Commit the current database file to the snapshot repository (no-op when the
     bytes have not changed or persistence is not configured)."""
@@ -163,9 +184,11 @@ def save_now():
     with _lock:
         try:
             payload = _snapshot_bytes()
-        except (sqlite3.Error, OSError):
+        except (sqlite3.Error, OSError) as exc:
+            _note_save(False, "snapshot read failed: %s" % exc)
             return False
         if not payload:
+            _note_save(False, "database file is empty")
             return False
         digest = hashlib.sha256(payload).hexdigest()
         if digest == _last_digest:
@@ -175,9 +198,11 @@ def save_now():
             sha = current.get("sha")
         except urllib.error.HTTPError as exc:
             if exc.code != 404:
+                _note_save(False, "cannot read current snapshot: HTTP %s" % exc.code)
                 return False
             sha = None
-        except urllib.error.URLError:
+        except urllib.error.URLError as exc:
+            _note_save(False, "cannot reach GitHub: %s" % exc)
             return False
         body = {"message": "ExamFlow data snapshot", "branch": BRANCH,
                 "content": base64.b64encode(payload).decode("ascii")}
@@ -185,7 +210,13 @@ def save_now():
             body["sha"] = sha
         try:
             _api("/repos/%s/contents/%s" % (REPO, SNAPSHOT_PATH), "PUT", body)
-        except (urllib.error.URLError, urllib.error.HTTPError):
+        except urllib.error.HTTPError as exc:
+            _note_save(False, "snapshot commit rejected: HTTP %s %s"
+                       % (exc.code, (exc.read() or b"").decode("utf-8", "replace")[:160]))
+            return False
+        except urllib.error.URLError as exc:
+            _note_save(False, "cannot reach GitHub: %s" % exc)
             return False
         _last_digest = digest
+        _note_save(True, None)
         return True
