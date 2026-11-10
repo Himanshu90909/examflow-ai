@@ -231,8 +231,26 @@ TWILIO_ACCOUNT_SID=… TWILIO_AUTH_TOKEN=… TWILIO_FROM=+1…
 EXAMFLOW_PHONE_COUNTRY=91     # country code assumed for bare national numbers
 ```
 
+Turning a gateway on is the only step needed; the demonstration flag must then be removed,
+because a configured gateway always wins and the code is no longer returned to the page:
+
+1. Create a Twilio trial account, verify your own mobile number under *Phone numbers → Verified
+   caller IDs*, and copy the Account SID, the auth token and a sender number (a trial
+   `+1 555…` sender works; trial accounts can only text numbers you have verified).
+2. Set `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and `TWILIO_FROM` in the deployment and delete
+   `EXAMFLOW_SMS_DEMO`.
+3. Prove delivery before trusting the login form:
+   `curl -X POST <origin>/api/diag/sms-test -H "X-Diag-Key: $EXAMFLOW_DIAG_KEY" \
+        -H "Content-Type: application/json" -d '{"phone":"98xxxxxxxx"}'`
+   A `200` means the gateway accepted the message and the phone rang; a `502` carries the
+   provider's own words (`21608 unverified number`, `insufficient funds`, and so on).
+
+Fast2SMS is the cheaper Indian option the code already speaks, but its OTP route needs DLT
+template registration before it will deliver to Indian numbers, so Twilio is the shorter path
+for a review link.
+
 Without a gateway, `EXAMFLOW_SMS_DEMO=1` runs a demonstration: the requested code is returned to
-the sign-in page and shown on screen so a reviewer can complete the flow. It is off unless that
+the sign-in page and prefilled so a reviewer can complete the flow. It is off unless that
 variable is set and it must never be set on a real deployment. Numbers are stored in E.164 form;
 the seeded demonstration accounts use `+91 90000 00001`…`00004` (staff) and
 `…00011`…`00013` (students).

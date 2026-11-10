@@ -173,6 +173,21 @@ class Handler(BaseHTTPRequestHandler):
                     "persistence": persistence.status(),
                 })
 
+            if path == "/api/diag/sms-test" and method == "POST":
+                expected = diag_key()
+                if not expected or (self.headers.get("X-Diag-Key") or "") != expected:
+                    raise auth.NotFound("Endpoint not found")
+                body = self._json_body()
+                try:
+                    to = sms.normalize(body.get("phone"))
+                    sms.send(to, body.get("text") or "ExamFlow AI test message.")
+                except ValueError as exc:
+                    raise auth.ValidationError(str(exc))
+                except Exception as exc:  # noqa: BLE001 - the provider's words matter here
+                    return self._send(502, {"sent": False, "transport": sms.TRANSPORT or None,
+                                            "error": str(exc)})
+                return self._send(200, {"sent": True, "to": to, "transport": sms.TRANSPORT})
+
             if method == "GET" and path == "/api/auth/providers":
                 return self._send(200, {"password": _password_sign_in_available(),
                                         "google": google_auth.ENABLED,
