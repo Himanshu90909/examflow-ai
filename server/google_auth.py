@@ -31,8 +31,32 @@ class GoogleAuthError(Exception):
     pass
 
 
-def sign_state(redirect_uri):
-    payload = {"n": secrets.token_urlsafe(10), "r": redirect_uri, "exp": int(time.time()) + STATE_TTL}
+PUBLIC_URL = (os.environ.get("EXAMFLOW_PUBLIC_URL") or "").strip().rstrip("/")
+
+
+def callback_uri(origin):
+    """The callback Google is allowed to send the browser back to.
+
+    A client may only redirect to URIs registered on it, so every deployment hands
+    Google the same canonical callback. The host the visitor actually used travels
+    inside the signed state and is where they are returned to once signed in, which
+    keeps alternative domains (custom domain, preview URL) working without editing
+    the Google client every time.
+    """
+    base = PUBLIC_URL or (origin or "").strip().rstrip("/")
+    return base + "/api/auth/google/callback"
+
+
+def sign_state(redirect_uri, portal="student", origin=""):
+    """Sign the flow state: callback URI, portal, and the host to return to."""
+    target, _, packed_portal = (redirect_uri or "").partition("|")
+    payload = {
+        "n": secrets.token_urlsafe(10),
+        "r": target,
+        "p": (portal or packed_portal or "student").strip().lower(),
+        "o": (origin or "").strip().rstrip("/"),
+        "exp": int(time.time()) + STATE_TTL,
+    }
     body = auth._b64(json.dumps(payload, separators=(",", ":")).encode())
     signature = auth._b64(hmac.new(auth.SECRET.encode(), body.encode(), hashlib.sha256).digest())
     return body + "." + signature

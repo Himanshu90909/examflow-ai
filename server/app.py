@@ -179,30 +179,37 @@ class Handler(BaseHTTPRequestHandler):
                 if not google_auth.ENABLED:
                     return self._redirect("/?google_error=not_configured#/login")
                 portal = (query.get("portal") or "user").strip().lower()
-                redirect_uri = self._origin() + "/api/auth/google/callback"
-                state = google_auth.sign_state(redirect_uri + "|" + portal)
+                origin = self._origin()
+                redirect_uri = google_auth.callback_uri(origin)
+                state = google_auth.sign_state(redirect_uri, portal, origin)
                 return self._redirect(google_auth.authorize_url(redirect_uri, state))
 
             if method == "GET" and path == "/api/auth/google/callback":
                 if query.get("error"):
                     return self._redirect("/?google_error=cancelled#/login")
-                # read_state returns the signed payload dict; the redirect URI and the
-                # portal it was issued for are packed into the "r" claim as uri|portal.
+                # read_state returns the signed payload: "r" is the registered callback
+                # Google redirected to, "p" the portal, "o" the host to return to.
                 state = google_auth.read_state(query.get("state") or "") or {}
-                redirect_uri, _, portal = (state.get("r") or "").partition("|")
-                portal = portal.strip().lower() or "student"
+                redirect_uri = (state.get("r") or "").partition("|")[0]
+                portal = (state.get("p") or "student").strip().lower() or "student"
+                # The host the visitor started on, signed into the state. It lets an
+                # alternative domain complete the flow through the registered callback
+                # and still land back on the address the visitor typed.
+                site = (state.get("o") or "").strip().rstrip("/")
+                if not site.startswith(("http://", "https://")):
+                    site = ""
                 if not redirect_uri:
-                    return self._redirect("/?google_error=expired#/login")
+                    return self._redirect(site + "/?google_error=expired#/login")
                 try:
                     profile = google_auth.exchange_code(query.get("code") or "", redirect_uri)
                 except google_auth.GoogleAuthError:
-                    return self._redirect("/?google_error=google#/login")
+                    return self._redirect(site + "/?google_error=google#/login")
 
                 row = conn.execute("SELECT * FROM users WHERE LOWER(email) = ?",
                                    (profile["email"],)).fetchone()
                 if row is None:
                     if portal != "student":
-                        return self._redirect("/?google_error=no_account#/login/student")
+                        return self._redirect(site + "/?google_error=no_account#/login/student")
                     conn.execute(
                         """INSERT INTO users (id, full_name, email, password_hash, role,
                                               school_id, department_id, student_group_id,
@@ -216,16 +223,16 @@ class Handler(BaseHTTPRequestHandler):
 
                 user = db.decode_row("users", row)
                 if not user.get("is_active", 1):
-                    return self._redirect("/?google_error=inactive#/login")
+                    return self._redirect(site + "/?google_error=inactive#/login")
                 allowed = {"admin": ("Super Admin", "School Admin"),
                            "user": ("Invigilator",),
                            "student": ("Student",)}.get(portal, ())
                 if allowed and user["role"] not in allowed:
-                    return self._redirect("/?google_error=wrong_portal#/login/%s" % portal)
+                    return self._redirect(site + "/?google_error=wrong_portal#/login/%s" % portal)
 
                 db.audit(conn, user, "User login (Google)", "user", user["id"])
                 conn.commit()
-                return self._redirect("/#google_token=" + quote(auth.make_token(user)))
+                return self._redirect(site + "/#google_token=" + quote(auth.make_token(user)))
 
             if method == "POST" and path == "/api/auth/request-code":
                 body = self._json_body()

@@ -71,9 +71,73 @@ class GoogleSignInTest(unittest.TestCase):
             "picture": None, "email_verified": True}
 
     def test_state_round_trip_returns_payload(self):
+        state = google_auth.sign_state(
+            "https://site.test/api/auth/google/callback", "admin", "https://site.test")
+        payload = google_auth.read_state(state)
+        self.assertEqual(payload["r"], "https://site.test/api/auth/google/callback")
+        self.assertEqual(payload["p"], "admin")
+        self.assertEqual(payload["o"], "https://site.test")
+
+    def test_legacy_packed_state_is_still_read(self):
         state = google_auth.sign_state("https://site.test/api/auth/google/callback|student")
         payload = google_auth.read_state(state)
-        self.assertEqual(payload["r"], "https://site.test/api/auth/google/callback|student")
+        self.assertEqual(payload["r"], "https://site.test/api/auth/google/callback")
+        self.assertEqual(payload["p"], "student")
+
+    def test_callback_uri_follows_the_visitor_when_no_public_url_is_set(self):
+        self.assertEqual(google_auth.PUBLIC_URL, "")
+        self.assertEqual(google_auth.callback_uri("https://getexamflow.vercel.app/"),
+                         "https://getexamflow.vercel.app/api/auth/google/callback")
+
+    def test_callback_uri_prefers_the_registered_public_url(self):
+        google_auth.PUBLIC_URL = "https://examflow-ai-inky.vercel.app"
+        try:
+            self.assertEqual(google_auth.callback_uri("https://getexamflow.vercel.app"),
+                             "https://examflow-ai-inky.vercel.app/api/auth/google/callback")
+        finally:
+            google_auth.PUBLIC_URL = ""
+
+    def test_second_domain_signs_in_through_the_registered_callback(self):
+        """A visitor on the clean domain must still finish on the clean domain."""
+        google_auth.PUBLIC_URL = "https://examflow-ai-inky.vercel.app"
+        try:
+            status, location, _ = self.request("/api/auth/google/start?portal=student")
+            self.assertEqual(status, 302)
+            self.assertIn("redirect_uri=https%3A%2F%2Fexamflow-ai-inky.vercel.app"
+                          "%2Fapi%2Fauth%2Fgoogle%2Fcallback", location)
+            state = location.split("state=", 1)[1].split("&", 1)[0]
+
+            status, location, body = self.request(
+                "/api/auth/google/callback?code=stub&state=" + state)
+            self.assertEqual(status, 302, body[:200])
+            self.assertTrue(location.startswith(self.origin + "/#google_token="), location)
+            token = location.split("#google_token=", 1)[1]
+            self.assertIsNotNone(auth.read_token(token))
+        finally:
+            google_auth.PUBLIC_URL = ""
+
+    def test_failed_sign_in_returns_to_the_originating_domain(self):
+        google_auth.PUBLIC_URL = "https://examflow-ai-inky.vercel.app"
+        try:
+            state = google_auth.sign_state(
+                "https://examflow-ai-inky.vercel.app/api/auth/google/callback",
+                "student", "https://getexamflow.vercel.app")
+
+            def boom(code, redirect_uri):
+                raise google_auth.GoogleAuthError("nope")
+
+            original = google_auth.exchange_code
+            google_auth.exchange_code = boom
+            try:
+                status, location, _ = self.request(
+                    "/api/auth/google/callback?code=stub&state=" + state)
+            finally:
+                google_auth.exchange_code = original
+            self.assertEqual(status, 302)
+            self.assertEqual(location,
+                             "https://getexamflow.vercel.app/?google_error=google#/login")
+        finally:
+            google_auth.PUBLIC_URL = ""
 
     def test_start_redirects_to_google_with_registered_redirect_uri(self):
         status, location, _ = self.request("/api/auth/google/start?portal=student")
