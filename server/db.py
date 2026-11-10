@@ -6,6 +6,8 @@ JSON-ish columns (lists) are stored as TEXT and serialised at the edges.
 import json
 import os
 import sqlite3
+import threading
+import time
 import uuid
 from datetime import datetime, timezone
 
@@ -282,10 +284,18 @@ def new_id() -> str:
 
 
 def connect() -> sqlite3.Connection:
+    """Open a connection that waits its turn instead of failing under load.
+
+    Serverless hosts start several workers at once on a cold start, all of which
+    touch the same SQLite file. Without a busy timeout those workers fail each
+    other with "database is locked", which surfaced to the user as a 500 on the
+    sign-in request.
+    """
     import persistence
     persistence.ensure_restored()
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH, timeout=15, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout = 15000")
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
@@ -334,23 +344,49 @@ def ensure_student_accounts() -> int:
     return added
 
 
+_INIT_LOCK = threading.Lock()
+
+
 def init_db(seed: bool = True) -> None:
+    """Create the schema and the demonstration dataset exactly once.
+
+    Concurrent cold starts are serialised inside the process and retried while
+    the file is busy, so a burst of first requests cannot leave a half-built
+    database behind.
+    """
     import persistence
     persistence.ensure_restored()
-    fresh = not os.path.exists(DB_PATH)
-    conn = connect()
-    conn.executescript(SCHEMA)
-    conn.commit()
-    conn.close()
-    if seed and fresh:
-        from seed import seed_database
-        seed_database()
-    _ensure_user_columns()
-    changed = link_invigilator_accounts()
-    changed += ensure_student_accounts()
-    if changed:
-        import persistence
-        persistence.save_now()
+    with _INIT_LOCK:
+        fresh = not os.path.exists(DB_PATH)
+        _execute_when_free(lambda conn: conn.executescript(SCHEMA))
+        if seed and fresh:
+            from seed import seed_database
+            seed_database()
+        _ensure_user_columns()
+        changed = link_invigilator_accounts()
+        changed += ensure_student_accounts()
+        if changed:
+            import persistence
+            persistence.save_now()
+
+
+def _execute_when_free(work, attempts: int = 6, pause: float = 0.25):
+    """Run ``work`` with a connection, retrying while the database file is busy."""
+    last = None
+    for attempt in range(attempts):
+        conn = connect()
+        try:
+            result = work(conn)
+            conn.commit()
+            return result
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc).lower() and "busy" not in str(exc).lower():
+                raise
+            last = exc
+            time.sleep(pause * (attempt + 1))
+        finally:
+            conn.close()
+    raise last
 
 
 def link_invigilator_accounts() -> int:

@@ -2,6 +2,7 @@
 
 Run:  python3 server/app.py  ->  http://localhost:8000
 """
+import collections
 import json
 import os
 import re
@@ -53,6 +54,31 @@ CONTENT_TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset
                  ".js": "application/javascript; charset=utf-8", ".svg": "image/svg+xml",
                  ".png": "image/png", ".jpg": "image/jpeg", ".ico": "image/x-icon",
                  ".json": "application/json"}
+
+
+# --- incident trail -----------------------------------------------------------
+# A 500 on a hosted instance is otherwise invisible: the log line disappears with
+# the container. Keep the last few failures in memory and behind a keyed endpoint
+# so an operator can see what broke without redeploying.
+INCIDENTS = collections.deque(maxlen=10)
+
+
+def record_incident(method, path, exc):
+    incident = os.urandom(3).hex()
+    INCIDENTS.append({
+        "id": incident,
+        "at": db.now_iso(),
+        "request": "%s %s" % (method, path),
+        "kind": type(exc).__name__,
+        "message": str(exc)[:400],
+        "trace": "".join(traceback.format_exception_only(type(exc), exc)).strip(),
+    })
+    return incident
+
+
+def diag_key():
+    """The diagnostics endpoint answers only when a key is configured for it."""
+    return (os.environ.get("EXAMFLOW_DIAG_KEY") or "").strip()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -129,6 +155,18 @@ class Handler(BaseHTTPRequestHandler):
 
         conn = db.connect()
         try:
+            if method == "GET" and path == "/api/diag":
+                expected = diag_key()
+                if not expected or (self.headers.get("X-Diag-Key") or "") != expected:
+                    raise auth.NotFound("Endpoint not found")
+                return self._send(200, {
+                    "ok": True,
+                    "now": db.now_iso(),
+                    "db_path": db.DB_PATH,
+                    "db_bytes": os.path.getsize(db.DB_PATH) if os.path.exists(db.DB_PATH) else 0,
+                    "incidents": list(INCIDENTS),
+                })
+
             if method == "GET" and path == "/api/auth/providers":
                 return self._send(200, {"password": _password_sign_in_available(),
                                         "google": google_auth.ENABLED,
@@ -532,9 +570,14 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, {"error": str(exc)})
         except auth.ValidationError as exc:
             self._send(422, {"error": str(exc)})
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             traceback.print_exc()
-            self._send(500, {"error": "Unexpected server error. Check the server console for details."})
+            incident = record_incident(method, path, exc)
+            self._send(500, {
+                "error": "Unexpected server error. Check the server console for details.",
+                "incident": incident,
+                "kind": type(exc).__name__,
+            })
         finally:
             conn.close()
 
