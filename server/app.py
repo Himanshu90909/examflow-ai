@@ -33,6 +33,13 @@ PORTAL_ROLES = {"admin": ("Super Admin", "School Admin"),
                 "user": ("Invigilator",),
                 "student": ("Student",)}
 
+# Where an account of each role actually belongs. Google sign-in used to be refused
+# outright when the account's role did not match the sign-in page the visitor opened,
+# which left a real account stuck on a page it could not pass. The callback now signs
+# the person in and hands the client this portal so it can open the right workspace.
+PORTAL_FOR_ROLE = {"Super Admin": "admin", "School Admin": "admin",
+                   "Invigilator": "user", "Student": "student"}
+
 def _portal_mismatch_message(portal):
     """One sentence telling someone they are on the wrong sign-in page."""
     if portal == "admin":
@@ -204,7 +211,7 @@ class Handler(BaseHTTPRequestHandler):
             if method == "GET" and path == "/api/auth/google/start":
                 if not google_auth.ENABLED:
                     return self._redirect("/?google_error=not_configured#/login")
-                portal = (query.get("portal") or "user").strip().lower()
+                portal = (query.get("portal") or "").strip().lower()
                 origin = self._origin()
                 redirect_uri = google_auth.callback_uri(origin)
                 state = google_auth.sign_state(redirect_uri, portal, origin)
@@ -250,11 +257,17 @@ class Handler(BaseHTTPRequestHandler):
                 user = db.decode_row("users", row)
                 if not user.get("is_active", 1):
                     return self._redirect(site + "/?google_error=inactive#/login")
-                allowed = {"admin": ("Super Admin", "School Admin"),
-                           "user": ("Invigilator",),
-                           "student": ("Student",)}.get(portal, ())
+                # Sign in either way: the account knows its own role, so a mismatched
+                # sign-in page must not be a dead end. The client is told where the
+                # account belongs and opens that workspace with a short explanation.
+                allowed = PORTAL_ROLES.get(portal, ())
+                notice = ""
                 if allowed and user["role"] not in allowed:
-                    return self._redirect(site + "/?google_error=wrong_portal#/login/%s" % portal)
+                    home = PORTAL_FOR_ROLE.get(user["role"], "student")
+                    notice = "&portal=%s&asked=%s" % (home, portal or home)
+                    db.audit(conn, user, "Signed in on another portal's page", "user",
+                             user["id"], "Opened the %s page, account is %s"
+                             % (portal or "default", user["role"]))
 
                 db.audit(conn, user, "User login (Google)", "user", user["id"])
                 conn.commit()
@@ -262,7 +275,8 @@ class Handler(BaseHTTPRequestHandler):
                 # brand-new Google account has to be snapshotted right here; otherwise
                 # the token reaches an instance whose database has never seen the user.
                 persistence.save_now()
-                return self._redirect(site + "/#google_token=" + quote(auth.make_token(user)))
+                return self._redirect(site + "/#google_token=" + quote(auth.make_token(user))
+                                      + notice)
 
             if method == "POST" and path == "/api/auth/request-code":
                 body = self._json_body()

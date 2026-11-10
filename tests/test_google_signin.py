@@ -38,6 +38,11 @@ def seed():
         " is_active, created_at) VALUES ('usr_admin','Admin','admin@example.com',?,"
         " 'Super Admin','sch_1',1,?)",
         (auth.hash_password("x"), db.now_iso()))
+    conn.execute(
+        "INSERT INTO users (id, full_name, email, password_hash, role, school_id,"
+        " is_active, created_at) VALUES ('usr_student','Student','student@example.com',?,"
+        " 'Student','sch_1',1,?)",
+        (auth.hash_password("x"), db.now_iso()))
     conn.commit()
     conn.close()
 
@@ -202,15 +207,40 @@ class GoogleSignInTest(unittest.TestCase):
         self.assertEqual(status, 302)
         self.assertEqual(location, "/?google_error=cancelled#/login")
 
-    def test_existing_admin_on_student_portal_is_refused(self):
+    def as_google_user(self, email, name="Person"):
         google_auth.exchange_code = lambda code, redirect_uri: {
-            "email": "admin@example.com", "name": "Admin",
-            "picture": None, "email_verified": True}
-        state = google_auth.sign_state(self.origin + "/api/auth/google/callback|student")
-        status, location, _ = self.request(
+            "email": email, "name": name, "picture": None, "email_verified": True}
+
+    def sign_in_through(self, portal):
+        state = google_auth.sign_state(
+            self.origin + "/api/auth/google/callback", portal, self.origin)
+        status, location, body = self.request(
             "/api/auth/google/callback?code=stub&state=" + state)
-        self.assertEqual(status, 302)
-        self.assertEqual(location, "/?google_error=wrong_portal#/login/student")
+        self.assertEqual(status, 302, body[:200])
+        self.assertTrue(location.startswith(self.origin + "/#google_token="), location)
+        token = location.split("#google_token=", 1)[1].split("&", 1)[0]
+        return location, auth.read_token(token)
+
+    def test_admin_on_the_student_page_is_signed_in_and_told_its_own_portal(self):
+        """A real account on the wrong sign-in page must not be a dead end."""
+        self.as_google_user("admin@example.com", "Admin")
+        location, payload = self.sign_in_through("student")
+        self.assertIsNotNone(payload)
+        self.assertIn("portal=admin", location)
+        self.assertIn("asked=student", location)
+
+    def test_student_on_the_admin_page_is_sent_to_the_student_portal(self):
+        self.as_google_user("student@example.com", "Student")
+        location, payload = self.sign_in_through("admin")
+        self.assertIsNotNone(payload)
+        self.assertIn("portal=student", location)
+        self.assertIn("asked=admin", location)
+
+    def test_matching_portal_carries_no_redirect_notice(self):
+        self.as_google_user("student@example.com", "Student")
+        location, payload = self.sign_in_through("student")
+        self.assertIsNotNone(payload)
+        self.assertNotIn("portal=", location)
 
     def test_providers_reports_google_when_configured(self):
         status, _, body = self.request("/api/auth/providers")

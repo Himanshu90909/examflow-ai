@@ -767,10 +767,28 @@
     const hash = location.hash || '';
     const marker = '#google_token=';
     if (hash.indexOf(marker) !== 0) return false;
-    App.state.token = decodeURIComponent(hash.slice(marker.length));
+    /* The callback appends where the account belongs when the visitor opened another
+       portal's page, so the shell can say why it opened a different workspace. */
+    const params = new URLSearchParams(hash.slice(1));
+    App.state.token = params.get('google_token') || '';
+    App.state.googlePortal = params.get('portal') || null;
+    App.state.googleAsked = params.get('asked') || null;
     localStorage.setItem('examflow_token', App.state.token);
     history.replaceState(null, '', location.pathname + location.search + '#/login');
     return true;
+  }
+
+  const PORTAL_LABEL = { admin: 'administrator', user: 'invigilator', student: 'student' };
+
+  function announceGooglePortal() {
+    const home = App.state.googlePortal;
+    const asked = App.state.googleAsked;
+    App.state.googlePortal = null;
+    App.state.googleAsked = null;
+    if (!home || !asked || asked === home) return;
+    const role = (App.state.user && App.state.user.role) || '';
+    toast('Signed in as ' + (role || PORTAL_LABEL[home]) + '. Your account belongs to the '
+          + PORTAL_LABEL[home] + ' portal, so that is where we opened.', 'info', 7000);
   }
 
   function portalCard(portal, title, subtitle, text) {
@@ -1121,6 +1139,7 @@
     }
     buildShell();
     await renderRoute();
+    announceGooglePortal();
   }
 
   async function boot() {
