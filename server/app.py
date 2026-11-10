@@ -171,6 +171,8 @@ class Handler(BaseHTTPRequestHandler):
                     "db_bytes": os.path.getsize(db.DB_PATH) if os.path.exists(db.DB_PATH) else 0,
                     "incidents": list(INCIDENTS),
                     "persistence": persistence.status(),
+                    "sms": {"transport": sms.TRANSPORT or None, "demo": sms.DEMO,
+                            "phone_country": sms.COUNTRY_CODE, "wallet": sms.wallet()},
                 })
 
             if path == "/api/diag/sms-test" and method == "POST":
@@ -332,6 +334,7 @@ class Handler(BaseHTTPRequestHandler):
                 known = bool(user) and (not allowed_roles or user["role"] in allowed_roles)
                 demo_code = None
                 deliver = False
+                delivery_error = None
                 if known and not otp.hourly_cap_reached(conn, "phone", phone):
                     if otp.recent_request_blocked(conn, "phone", phone):
                         raise auth.ValidationError(
@@ -345,8 +348,15 @@ class Handler(BaseHTTPRequestHandler):
                             deliver = True
                             db.audit(conn, None, "Sign-in code texted", "user", user["id"], phone)
                             conn.commit()
-                        except Exception:  # noqa: BLE001
+                        except Exception as exc:  # noqa: BLE001
                             traceback.print_exc()
+                            delivery_error = sms.describe_failure(exc)
+                            if sms.DEMO:
+                                demo_code = code
+                            else:
+                                raise auth.ValidationError(
+                                    "The SMS gateway refused this message, so no code was "
+                                    "issued. " + delivery_error)
                     elif sms.DEMO:
                         demo_code = code
                 elif not known and portal == "student":
@@ -361,8 +371,15 @@ class Handler(BaseHTTPRequestHandler):
                                                 "minutes. Do not share it."
                                          % (code, otp.CODE_TTL_MINUTES))
                                 deliver = True
-                            except Exception:  # noqa: BLE001
+                            except Exception as exc:  # noqa: BLE001
                                 traceback.print_exc()
+                                delivery_error = sms.describe_failure(exc)
+                                if sms.DEMO:
+                                    demo_code = code
+                                else:
+                                    raise auth.ValidationError(
+                                        "The SMS gateway refused this message, so no code "
+                                        "was issued. " + delivery_error)
                         elif sms.DEMO:
                             demo_code = code
                 elif sms.DEMO and not otp.recent_request_blocked(conn, "phone", phone):
@@ -377,6 +394,8 @@ class Handler(BaseHTTPRequestHandler):
                            "expires_in": otp.CODE_TTL_MINUTES * 60}
                 if demo_code:
                     payload["demo_code"] = demo_code
+                if delivery_error:
+                    payload["delivery_error"] = delivery_error
                 if sms.DEMO and not known and portal != "student":
                     payload["hint"] = (
                         "This number is not linked to a staff account yet, so the code will be "

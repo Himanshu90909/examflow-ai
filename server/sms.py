@@ -74,6 +74,39 @@ def display(number):
     return "+" + digits if digits else ""
 
 
+DLT_HINT = (" Fast2SMS needs a DLT-registered OTP template for Indian numbers; the "
+            "quick route works only while the account is in testing.")
+
+
+def wallet():
+    """Ask the gateway for its balance. A reading proves the key in this deployment works;
+    ``None`` means unconfigured or unreachable. Sends no message."""
+    if TRANSPORT != "fast2sms":
+        return None
+    request = urllib.request.Request(
+        "https://www.fast2sms.com/dev/wallet",
+        headers={"authorization": FAST2SMS_KEY, "User-Agent": "ExamFlowAI"})
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            payload = json.loads(response.read() or b"{}")
+    except Exception:  # noqa: BLE001 - a probe must never break the caller
+        return None
+    if payload.get("return") is False:
+        return None
+    return {"balance": payload.get("wallet"), "sms_count": payload.get("sms_count")}
+
+
+def describe_failure(exc):
+    """A one-line reason fit for a login form, taken from the gateway's own words."""
+    text = " ".join(str(exc).split())
+    if not text:
+        return "the gateway gave no reason."
+    lowered = text.lower()
+    if "dlt" in lowered or "template" in lowered or "sender id" in lowered:
+        text += DLT_HINT
+    return text[:400]
+
+
 def send(number, text):
     """Deliver one SMS. Raises RuntimeError when no transport is configured or the
     gateway rejects the message."""

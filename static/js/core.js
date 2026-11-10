@@ -893,6 +893,9 @@
         if (data.hint) {
           show(error, data.hint, 'info');
         }
+        if (data.delivery_error) {
+          show(error, 'The SMS could not be sent: ' + data.delivery_error, 'err');
+        }
       } catch (err) {
         show(error, err.message, 'err');
       } finally {

@@ -89,6 +89,17 @@ class SmsTransportTest(unittest.TestCase):
         self.assertIn("21608", str(ctx.exception))
         self.assertIn("unverified", str(ctx.exception))
 
+    def test_failure_text_carries_the_gateway_reason_and_the_dlt_hint(self):
+        s = self.sms
+        message = s.describe_failure(RuntimeError(
+            "Fast2SMS rejected the message: {\"message\": [\"Invalid template\"]}"))
+        self.assertIn("Invalid template", message)
+        self.assertIn("DLT", message)
+        plain = s.describe_failure(RuntimeError("Insufficient Wallet Balance"))
+        self.assertIn("Insufficient Wallet Balance", plain)
+        self.assertNotIn("DLT", plain)
+        self.assertTrue(s.describe_failure(RuntimeError("")))
+
     def test_diagnostic_refuses_without_the_key_and_explains_a_missing_gateway(self):
         import app
         os.environ["EXAMFLOW_DIAG_KEY"] = "test-diag-key"
