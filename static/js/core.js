@@ -894,7 +894,11 @@
           show(error, data.hint, 'info');
         }
         if (data.delivery_error) {
-          show(error, 'The SMS could not be sent: ' + data.delivery_error, 'err');
+          show(error, data.demo_code
+            ? 'The SMS gateway is not active on this deployment yet, so the code is filled '
+              + 'in below. Gateway said: ' + data.delivery_error
+            : 'The SMS could not be sent: ' + data.delivery_error,
+          data.demo_code ? 'info' : 'err');
         }
       } catch (err) {
         show(error, err.message, 'err');
