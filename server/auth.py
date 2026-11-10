@@ -113,11 +113,12 @@ def find_user(email: str):
 PORTAL_DEFAULT_ROLE = {"admin": "School Admin", "user": "Invigilator", "student": "Student"}
 
 
-def provision_gmail_account(conn, email, password, portal, full_name=None):
+def provision_gmail_account(conn, email, password, portal, full_name=None, enrolment=None):
     """Create a self-service account for an email address on first sign-in.
 
-    The portal decides the starting role; new accounts are bound to the primary
-    school so the dashboards open with real (seeded) data instead of a blank shell.
+    The portal decides the starting role. A student's own choice of branch, course and
+    semester wins; without one the account falls back to the primary school so the
+    dashboards still open with real (seeded) data instead of a blank shell.
     """
     import db as _db  # local import keeps the module importable in script mode
 
@@ -144,6 +145,11 @@ def provision_gmail_account(conn, email, password, portal, full_name=None):
         group_id = group["id"] if group else None
         if group_id:
             conn.execute("UPDATE users SET student_group_id = ? WHERE id = ?", (group_id, user_id))
+    if role == "Student" and enrolment:
+        import catalog
+
+        catalog.enrol(conn, user_id, enrolment.get("school"), enrolment.get("programme"),
+                      enrolment.get("semester"), enrolment.get("section"))
     conn.commit()
     return find_user(email)
 
@@ -167,7 +173,7 @@ def find_user_by_phone(phone: str):
     return user
 
 
-def provision_phone_account(conn, phone, portal, full_name=None):
+def provision_phone_account(conn, phone, portal, full_name=None, enrolment=None):
     """Create a student account on first phone-number sign-in.
 
     The account has no mailbox of its own, so the email column gets a routing
@@ -200,6 +206,11 @@ def provision_phone_account(conn, phone, portal, full_name=None):
         group_id = group["id"] if group else None
         if group_id:
             conn.execute("UPDATE users SET student_group_id = ? WHERE id = ?", (group_id, user_id))
+    if enrolment:
+        import catalog
+
+        catalog.enrol(conn, user_id, enrolment.get("school"), enrolment.get("programme"),
+                      enrolment.get("semester"), enrolment.get("section"))
     conn.commit()
     return find_user_by_phone(number)
 

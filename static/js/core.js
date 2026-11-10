@@ -763,6 +763,94 @@
       .catch(() => {});
   }
 
+  /* --------------------------------------------------- branch, course, semester */
+  /* A student signs up by narrowing down: LPU school (branch) -> course -> semester.
+     The lists come from /api/catalog so the form can never offer a branch the office
+     does not recognise. */
+  let catalogCache = null;
+  function loadCatalog() {
+    if (catalogCache) return Promise.resolve(catalogCache);
+    return fetch('/api/catalog')
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (data && data.schools && data.schools.length) catalogCache = data;
+        return catalogCache;
+      })
+      .catch(() => null);
+  }
+
+  function enrolmentBlock(note) {
+    const school = select([{ value: '', label: 'Select your branch' }], { disabled: 'disabled' });
+    const course = select([{ value: '', label: 'Pick a branch first' }], { disabled: 'disabled' });
+    const semester = select([{ value: '', label: 'Pick a course first' }], { disabled: 'disabled' });
+    const section = select([{ value: 'A', label: 'Section A' }]);
+    const status = h('div', { class: 'small muted', style: 'margin-top:4px', text: '' });
+    const node = h('div', { class: 'enrolment' },
+      note ? h('div', { class: 'small muted', style: 'margin-bottom:8px', text: note }) : null,
+      field('Branch (school)', school),
+      field('Course (programme)', course),
+      h('div', { class: 'grid two' }, field('Semester', semester), field('Section', section)),
+      status);
+
+    const fill = (el, options, placeholder) => {
+      el.innerHTML = '';
+      el.appendChild(h('option', { value: '', text: placeholder }));
+      options.forEach((option) => el.appendChild(
+        h('option', { value: option.value, text: option.label })));
+    };
+
+    let schools = [];
+    loadCatalog().then((data) => {
+      if (!data) {
+        status.textContent = 'The branch list could not load. Check the connection and try again.';
+        return;
+      }
+      schools = data.schools;
+      fill(school, schools.map((s) => ({ value: s.code, label: s.name + ' (' + s.code + ')' })),
+        'Select your branch');
+      school.disabled = false;
+      if (data.sections && data.sections.length) {
+        section.innerHTML = '';
+        data.sections.forEach((code) => section.appendChild(
+          h('option', { value: code, text: 'Section ' + code })));
+      }
+    });
+
+    school.addEventListener('change', () => {
+      const chosen = schools.filter((s) => s.code === school.value)[0];
+      course.disabled = !chosen;
+      semester.disabled = true;
+      fill(course, chosen
+        ? chosen.programmes.map((p) => ({ value: p.code, label: p.name + ' (' + p.level + ')' }))
+        : [], 'Pick a branch first');
+      fill(semester, [], 'Pick a course first');
+      status.textContent = chosen ? 'Examinations for ' + chosen.name + '.' : '';
+    });
+
+    course.addEventListener('change', () => {
+      const chosenSchool = schools.filter((s) => s.code === school.value)[0];
+      const chosen = chosenSchool && chosenSchool.programmes
+        .filter((p) => p.code === course.value)[0];
+      semester.disabled = !chosen;
+      fill(semester, chosen
+        ? Array.from({ length: chosen.semesters }, (unused, i) => ({ value: String(i + 1), label: 'Semester ' + (i + 1) }))
+        : [], 'Pick a course first');
+    });
+
+    const read = () => ({
+      school: school.value, programme: course.value, semester: semester.value,
+      section: section.value,
+    });
+    const problem = () => {
+      if (!school.value) return 'Choose your branch (school).';
+      if (!course.value) return 'Choose your course.';
+      if (!semester.value) return 'Choose your semester.';
+      return '';
+    };
+
+    return { node, read, problem };
+  }
+
   function takeGoogleToken() {
     const hash = location.hash || '';
     const marker = '#google_token=';
@@ -892,6 +980,11 @@
     const verifyBtn = h('button', { class: 'btn block', type: 'button', style: 'display:none', text: 'Verify and sign in' });
     const codeRow = h('div', { style: 'display:none' }, field('Sign-in code', code), verifyBtn);
     const providers = App.state.providers || {};
+    /* Optional until we know whether this number is new: the account is created on the
+       first code, and that is the moment the branch and course are needed. */
+    const enrolment = portal === 'student' ? enrolmentBlock(
+      'Signing in for the first time? Choose your branch and course so your account opens '
+      + 'with your own timetable.') : null;
 
     const show = (el, text, kind) => {
       el.className = 'alert ' + (kind || 'info');
@@ -955,11 +1048,19 @@
       const value = code.value.replace(/\D/g, '');
       if (value.length !== 6) { show(error, 'Enter the 6 digit code from the SMS.', 'err'); return; }
       verifyBtn.disabled = true;
+      if (enrolment) {
+        const picked = enrolment.read();
+        const partial = (picked.school || picked.programme || picked.semester)
+          && enrolment.problem();
+        if (partial) { show(error, partial, 'err'); return; }
+      }
       verifyBtn.innerHTML = '<span class="spinner"></span> Verifying';
       try {
+        const body = { phone: phone.value.trim(), code: value, portal: portal };
+        if (enrolment) Object.assign(body, enrolment.read());
         const data = await api('/api/auth/verify-phone-code', {
           method: 'POST',
-          body: { phone: phone.value.trim(), code: value, portal: portal },
+          body: body,
         });
         App.state.token = data.token;
         App.state.user = data.user;
@@ -983,6 +1084,7 @@
       note, error,
       field('Phone number', phone),
       h('div', { class: 'small muted', style: 'margin:-6px 0 10px', text: 'Include the country code, e.g. +91 90000 00001.' }),
+      enrolment ? h('div', { style: 'margin-bottom:12px' }, enrolment.node) : null,
       sendBtn,
       codeRow,
       h('a', { class: 'portal-switch', href: cfg.otherHref, text: cfg.otherText }));
@@ -998,6 +1100,11 @@
     let createMode = false;
     const roleName = { admin: 'a school administrator', user: 'an invigilator', student: 'a student' }[portal];
     const modeNote = h('div', { class: 'alert info', style: 'display:none;margin-top:10px' });
+    /* Students choose their branch and course while creating access, so the account
+       lands in the right school instead of the first one that was seeded. */
+    const enrolment = portal === 'student' ? enrolmentBlock() : null;
+    const enrolmentWrap = enrolment
+      ? h('div', { style: 'display:none;margin-top:12px' }, enrolment.node) : null;
     const switchMode = h('button', { class: 'btn ghost block', type: 'button', style: 'margin-top:8px',
       text: 'New here? Get access with your Gmail' });
     const googleSlot = h('div', { class: 'google-slot' });
@@ -1012,6 +1119,7 @@
       passwordOn ? field('Password', password) : null,
       passwordOn ? submit : null,
       passwordOn ? switchMode : null,
+      passwordOn ? enrolmentWrap : null,
       passwordOn ? modeNote : null,
       googleSlot,
       providers.otp ? h('div', { class: 'mt12', style: 'margin-top:10px' },
@@ -1052,11 +1160,23 @@
       e.preventDefault();
       error.style.display = 'none';
       submit.disabled = true;
+      if (createMode && enrolment) {
+        const problem = enrolment.problem();
+        if (problem) {
+          error.textContent = problem;
+          error.style.display = 'flex';
+          submit.disabled = false;
+          submit.textContent = 'Get access with Gmail';
+          return;
+        }
+      }
       submit.innerHTML = '<span class="spinner"></span> ' + (createMode ? 'Creating access' : 'Signing in');
       try {
+        const body = { email: email.value.trim(), password: password.value, portal: portal };
+        if (createMode && enrolment) Object.assign(body, enrolment.read());
         const data = await api(createMode ? '/api/auth/gmail' : '/api/auth/login', {
           method: 'POST',
-          body: { email: email.value.trim(), password: password.value, portal: portal },
+          body: body,
         });
         App.state.token = data.token;
         App.state.user = data.user;
@@ -1080,6 +1200,7 @@
       submit.textContent = createMode ? 'Get access with Gmail' : 'Sign in';
       switchMode.textContent = createMode ? 'Back to sign in' : 'New here? Get access with your Gmail';
       modeNote.style.display = createMode ? 'flex' : 'none';
+      if (enrolmentWrap) enrolmentWrap.style.display = createMode ? '' : 'none';
       modeNote.textContent = 'Enter your Gmail address and pick a password (8 or more characters). '
         + 'Access is created instantly \u2014 no email or verification code needed \u2014 as ' + roleName + '.';
       error.style.display = 'none';

@@ -22,6 +22,7 @@ import institution
 import retheme
 import mailer
 import otp
+import catalog
 import sms
 import solver_service
 
@@ -50,6 +51,27 @@ def _portal_mismatch_message(portal):
                 "invigilator portal.")
     return ("This is the invigilator portal. Administrators and students sign in from their "
             "own portal.")
+
+
+def _enrolment_from(body, required_message=None):
+    """Read the branch, course and semester a student picked on the sign-up form.
+
+    Returns None when nothing was sent and nothing is required, which is the case for
+    staff self-registration and for anyone who already has an account.
+    """
+    raw = {"school": (body.get("school") or "").strip().upper(),
+           "programme": (body.get("programme") or "").strip().upper(),
+           "semester": body.get("semester"),
+           "section": (body.get("section") or "A").strip().upper()[:1] or "A"}
+    if not raw["school"] and not raw["programme"]:
+        if required_message:
+            raise auth.ValidationError(required_message)
+        return None
+    try:
+        catalog.resolve(raw["school"], raw["programme"], raw["semester"])
+    except catalog.EnrolmentError as exc:
+        raise auth.ValidationError(str(exc))
+    return raw
 
 
 def _password_sign_in_available():
@@ -207,6 +229,13 @@ class Handler(BaseHTTPRequestHandler):
                                         "phone_demo": sms.DEMO and not sms.ENABLED,
                                         "mode": AUTH_MODE,
                                         "institution": institution.public()})
+
+            if method == "GET" and path == "/api/catalog":
+                # Public: the sign-up form needs the branch and course list before
+                # anyone has a session, and it holds no personal data.
+                return self._send(200, {"schools": catalog.payload(),
+                                        "sections": catalog.SECTIONS,
+                                        "institution": institution.SHORT})
 
             if method == "GET" and path == "/api/auth/google/start":
                 if not google_auth.ENABLED:
@@ -427,6 +456,14 @@ class Handler(BaseHTTPRequestHandler):
                     phone = sms.normalize(body.get("phone"))
                 except ValueError as exc:
                     raise auth.ValidationError(str(exc))
+                # A number with no account is about to create one, so the branch and course
+                # are checked before the code is spent: a refusal must not burn the code,
+                # otherwise the visitor has to wait a minute for a new one just to fix a choice.
+                enrolment = None
+                if portal == "student" and not auth.find_user_by_phone(phone):
+                    enrolment = _enrolment_from(
+                        body, "Choose your branch, course and semester so your examination "
+                              "schedule is the right one.")
                 ok, reason = otp.confirm(conn, "phone", phone, portal, body.get("code"))
                 conn.commit()
                 if not ok:
@@ -438,7 +475,12 @@ class Handler(BaseHTTPRequestHandler):
                         raise auth.Unauthorized(
                             "No ExamFlow account uses that phone number. Ask the examination office "
                             "to add it.")
-                    user = auth.provision_phone_account(conn, phone, portal, body.get("full_name"))
+                    if enrolment is None:  # the account appeared between the two reads
+                        enrolment = _enrolment_from(
+                            body, "Choose your branch, course and semester so your "
+                                  "examination schedule is the right one.")
+                    user = auth.provision_phone_account(conn, phone, portal,
+                                                        body.get("full_name"), enrolment)
                     created = True
                 allowed_roles = PORTAL_ROLES.get(portal)
                 if allowed_roles and user["role"] not in allowed_roles:
@@ -482,7 +524,13 @@ class Handler(BaseHTTPRequestHandler):
                     conn.commit()
                     return self._send(200, {"token": auth.make_token(user), "user": user,
                                             "created": False})
-                user = auth.provision_gmail_account(conn, email, password, portal, body.get("full_name"))
+                enrolment = None
+                if portal == "student":
+                    enrolment = _enrolment_from(
+                        body, "Choose your branch, course and semester so your examination "
+                              "schedule is the right one.")
+                user = auth.provision_gmail_account(conn, email, password, portal,
+                                                    body.get("full_name"), enrolment)
                 if not user:
                     raise auth.ValidationError("Could not create that account. Try another address.")
                 db.audit(conn, user, "Self-service account created", "user", user["id"],

@@ -72,6 +72,9 @@ class PhoneSignInTest(unittest.TestCase):
         cls.server.shutdown()
         cls.server.server_close()
 
+    # what the sign-up form sends once a student picks a branch, course and semester
+    ENROLMENT = {"school": "SCSE", "programme": "CSE", "semester": "3", "section": "A"}
+
     def setUp(self):
         conn = db.connect()
         conn.execute("DELETE FROM login_codes")
@@ -131,8 +134,9 @@ class PhoneSignInTest(unittest.TestCase):
         _, issued = self.call("/api/auth/request-phone-code",
                               {"phone": "9000000002", "portal": "student"})
         code = issued["demo_code"]
-        status, _ = self.call("/api/auth/verify-phone-code",
-                              {"phone": "9000000002", "portal": "student", "code": code})
+        body = {"phone": "9000000002", "portal": "student", "code": code}
+        body.update(self.ENROLMENT)
+        status, _ = self.call("/api/auth/verify-phone-code", body)
         self.assertEqual(status, 200)
         status, payload = self.call("/api/auth/verify-phone-code",
                                     {"phone": "9000000002", "portal": "student", "code": code})
@@ -141,9 +145,9 @@ class PhoneSignInTest(unittest.TestCase):
     def test_new_student_is_created_from_a_phone_number(self):
         _, issued = self.call("/api/auth/request-phone-code",
                               {"phone": "9812345678", "portal": "student"})
-        status, payload = self.call("/api/auth/verify-phone-code",
-                                    {"phone": "9812345678", "portal": "student",
-                                     "code": issued["demo_code"]})
+        body = {"phone": "9812345678", "portal": "student", "code": issued["demo_code"]}
+        body.update(self.ENROLMENT)
+        status, payload = self.call("/api/auth/verify-phone-code", body)
         self.assertEqual(status, 200, payload)
         self.assertEqual(payload["user"]["role"], "Student")
         self.assertTrue(payload["created"])
@@ -158,14 +162,62 @@ class PhoneSignInTest(unittest.TestCase):
         try:
             _, issued = self.call("/api/auth/request-phone-code",
                                   {"phone": "9812300001", "portal": "student"})
-            status, payload = self.call("/api/auth/verify-phone-code",
-                                        {"phone": "9812300001", "portal": "student",
-                                         "code": issued["demo_code"]})
+            body = {"phone": "9812300001", "portal": "student",
+                    "code": issued["demo_code"]}
+            body.update(self.ENROLMENT)
+            status, payload = self.call("/api/auth/verify-phone-code", body)
         finally:
             persistence.save_now = original
         self.assertEqual(status, 200, payload)
         self.assertTrue(payload["created"])
         self.assertTrue(saved, "the new phone account was never persisted")
+
+    def test_new_student_without_a_branch_is_refused_and_told_what_to_pick(self):
+        _, issued = self.call("/api/auth/request-phone-code",
+                              {"phone": "9811100011", "portal": "student"})
+        status, payload = self.call("/api/auth/verify-phone-code",
+                                    {"phone": "9811100011", "portal": "student",
+                                     "code": issued["demo_code"]})
+        self.assertEqual(status, 422, payload)
+        self.assertIn("branch", payload["error"])
+        # and the code is not burned by the refusal, so the choice can be made and retried
+        body = {"phone": "9811100011", "portal": "student", "code": issued["demo_code"]}
+        body.update(self.ENROLMENT)
+        status, payload = self.call("/api/auth/verify-phone-code", body)
+        self.assertEqual(status, 200, payload)
+
+    def test_chosen_branch_and_course_are_stored_on_the_account(self):
+        _, issued = self.call("/api/auth/request-phone-code",
+                              {"phone": "9811100022", "portal": "student"})
+        body = {"phone": "9811100022", "portal": "student", "code": issued["demo_code"],
+                "full_name": "Branch Picker", "school": "SEEE", "programme": "ECE",
+                "semester": "5", "section": "B"}
+        status, payload = self.call("/api/auth/verify-phone-code", body)
+        self.assertEqual(status, 200, payload)
+        user = payload["user"]
+        self.assertTrue(user["school_id"])
+        self.assertTrue(user["department_id"])
+        conn = db.connect()
+        school = conn.execute("SELECT * FROM schools WHERE id = ?",
+                              (user["school_id"],)).fetchone()
+        department = conn.execute("SELECT * FROM departments WHERE id = ?",
+                                  (user["department_id"],)).fetchone()
+        group = conn.execute("SELECT * FROM student_groups WHERE id = ?",
+                             (user["student_group_id"],)).fetchone()
+        conn.close()
+        self.assertEqual(school["school_code"], "SEEE")
+        self.assertEqual(department["department_code"], "ECE")
+        self.assertEqual(group["semester"], 5)
+        self.assertEqual(group["section"], "B")
+
+    def test_course_from_another_branch_is_refused(self):
+        _, issued = self.call("/api/auth/request-phone-code",
+                              {"phone": "9811100033", "portal": "student"})
+        body = {"phone": "9811100033", "portal": "student", "code": issued["demo_code"],
+                "school": "SEEE", "programme": "CSE", "semester": "3"}
+        status, payload = self.call("/api/auth/verify-phone-code", body)
+        self.assertEqual(status, 422, payload)
+        self.assertIn("course", payload["error"])
 
     def test_demo_mode_still_shows_a_code_for_an_unregistered_staff_number(self):
         """Without an SMS gateway a refusal leaves the form empty, which reads as a failure."""
