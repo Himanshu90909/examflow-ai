@@ -109,6 +109,51 @@ def ensure_restored():
         return True
 
 
+_USER_CACHE = {}
+_USER_CACHE_TTL = 15.0
+
+
+def fetch_user(user_id):
+    """Read one user row from the latest committed snapshot.
+
+    Instances each keep a private copy of the database, so a session issued while one
+    instance was signing a user in can reach another instance that has not restored
+    that row yet. Rather than dropping the session, pull the row out of the snapshot
+    the sign-in instance already committed.
+    """
+    if not ENABLED or not user_id:
+        return None
+    import time as _time
+    cached = _USER_CACHE.get(user_id)
+    if cached and (_time.time() - cached[0]) < _USER_CACHE_TTL:
+        return cached[1]
+    row = None
+    try:
+        blob = _api("/repos/%s/contents/%s?ref=%s" % (REPO, SNAPSHOT_PATH, BRANCH))
+        raw = gzip.decompress(base64.b64decode(blob.get("content") or ""))
+    except (urllib.error.URLError, urllib.error.HTTPError, ValueError,
+            OSError, SnapshotError):
+        return None
+    temp_path = DB_PATH + ".lookup"
+    try:
+        with open(temp_path, "wb") as handle:
+            handle.write(raw)
+        source = sqlite3.connect(temp_path, timeout=10)
+        source.row_factory = sqlite3.Row
+        try:
+            found = source.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+            row = dict(found) if found else None
+        finally:
+            source.close()
+    except (sqlite3.Error, OSError):
+        row = None
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+    _USER_CACHE[user_id] = (_time.time(), row)
+    return row
+
+
 def save_now():
     """Commit the current database file to the snapshot repository (no-op when the
     bytes have not changed or persistence is not configured)."""

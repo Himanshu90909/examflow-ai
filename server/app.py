@@ -140,7 +140,12 @@ class Handler(BaseHTTPRequestHandler):
         token = header[7:].strip() if header.lower().startswith("bearer ") else None
         if not token:
             raise api.auth.Forbidden("Sign in to continue")
-        return auth.current_user(token)
+        user = auth.current_user(token)
+        if not user:
+            # A stale or unknown token is an authentication problem, not a server
+            # fault: answer 401 so the browser clears it and shows the login page.
+            raise auth.Unauthorized("Your session expired. Please sign in again.")
+        return user
 
     def _dispatch(self, method):
         parsed = urlparse(self.path)

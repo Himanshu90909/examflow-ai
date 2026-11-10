@@ -12,6 +12,7 @@ import secrets
 import time
 
 import db
+import persistence
 
 SECRET = os.environ.get("EXAMFLOW_SECRET", "examflow-dev-secret-change-in-production")
 TOKEN_TTL_SECONDS = 12 * 60 * 60
@@ -203,13 +204,45 @@ def provision_phone_account(conn, phone, portal, full_name=None):
     return find_user_by_phone(number)
 
 
+def _user_row(user_id):
+    conn = db.connect()
+    try:
+        return conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    finally:
+        conn.close()
+
+
+def _adopt_from_snapshot(user_id):
+    """Take a user row from the committed snapshot when this instance has not seen it.
+
+    Keeps a valid session alive across instances instead of logging the visitor out
+    on a fresh instance that restored the database a moment too early.
+    """
+    row = persistence.fetch_user(user_id)
+    if not row:
+        return None
+    conn = db.connect()
+    try:
+        columns = [c for c in row if c not in ("id",)]
+        conn.execute(
+            "INSERT OR IGNORE INTO users (%s) VALUES (%s)"
+            % (", ".join(["id"] + columns), ", ".join(["?"] * (len(columns) + 1))),
+            [user_id] + [row[c] for c in columns])
+        conn.commit()
+    except Exception:  # noqa: BLE001 - a mismatched row must not break sign-in
+        return None
+    finally:
+        conn.close()
+    return _user_row(user_id)
+
+
 def current_user(token: str):
     payload = read_token(token or "")
     if not payload:
         return None
-    conn = db.connect()
-    row = conn.execute("SELECT * FROM users WHERE id = ?", (payload["sub"],)).fetchone()
-    conn.close()
+    row = _user_row(payload["sub"])
+    if row is None:
+        row = _adopt_from_snapshot(payload["sub"])
     if not row or not row["is_active"]:
         return None
     user = dict(row)
