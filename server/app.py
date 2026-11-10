@@ -134,11 +134,11 @@ class Handler(BaseHTTPRequestHandler):
             if method == "GET" and path == "/api/auth/google/callback":
                 if query.get("error"):
                     return self._redirect("/?google_error=cancelled#/login")
-                try:
-                    redirect_uri, portal = (google_auth.read_state(query.get("state") or "")
-                                            or ("", "")).split("|")
-                except ValueError:
-                    redirect_uri, portal = "", ""
+                # read_state returns the signed payload dict; the redirect URI and the
+                # portal it was issued for are packed into the "r" claim as uri|portal.
+                state = google_auth.read_state(query.get("state") or "") or {}
+                redirect_uri, _, portal = (state.get("r") or "").partition("|")
+                portal = portal.strip().lower() or "student"
                 if not redirect_uri:
                     return self._redirect("/?google_error=expired#/login")
                 try:
