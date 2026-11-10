@@ -19,6 +19,7 @@ import persistence
 import google_auth
 import mailer
 import otp
+import sms
 import solver_service
 
 AUTH_MODE = (os.environ.get("EXAMFLOW_AUTH_MODE") or "both").strip().lower()
@@ -28,6 +29,17 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PORTAL_ROLES = {"admin": ("Super Admin", "School Admin"),
                 "user": ("Invigilator",),
                 "student": ("Student",)}
+
+def _portal_mismatch_message(portal):
+    """One sentence telling someone they are on the wrong sign-in page."""
+    if portal == "admin":
+        return ("This is the administrator portal. Invigilators and students sign in from "
+                "their own portal.")
+    if portal == "student":
+        return ("This is the student portal. Staff sign in from the administrator or "
+                "invigilator portal.")
+    return ("This is the invigilator portal. Administrators and students sign in from their "
+            "own portal.")
 
 
 def _password_sign_in_available():
@@ -121,6 +133,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"password": _password_sign_in_available(),
                                         "google": google_auth.ENABLED,
                                         "otp": mailer.ENABLED,
+                                        "phone": sms.available(),
+                                        "phone_demo": sms.DEMO and not sms.ENABLED,
                                         "mode": AUTH_MODE})
 
             if method == "GET" and path == "/api/auth/google/start":
@@ -184,11 +198,11 @@ class Handler(BaseHTTPRequestHandler):
                 user = auth.find_user(email)
                 allowed_roles = PORTAL_ROLES.get(portal)
                 known = bool(user) and (not allowed_roles or user["role"] in allowed_roles)
-                if known and otp.recent_request_blocked(conn, email):
+                if known and otp.recent_request_blocked(conn, "email", email):
                     raise auth.ValidationError(
                         "A code was sent a moment ago. Wait a minute before asking for another.")
                 if known:
-                    code = otp.issue(conn, email, portal)
+                    code = otp.issue(conn, "email", email, portal)
                     conn.commit()
                     sent = False
                     if mailer.ENABLED:
@@ -215,7 +229,7 @@ class Handler(BaseHTTPRequestHandler):
                 body = self._json_body()
                 portal = (body.get("portal") or "").strip().lower()
                 email = (body.get("email") or "").strip().lower()
-                ok, reason = otp.confirm(conn, email, portal, body.get("code"))
+                ok, reason = otp.confirm(conn, "email", email, portal, body.get("code"))
                 conn.commit()
                 if not ok:
                     raise auth.Unauthorized(reason)
@@ -227,21 +241,97 @@ class Handler(BaseHTTPRequestHandler):
                     db.audit(conn, user, "Blocked sign-in (wrong portal)", "user", user["id"],
                              "Tried the %s portal as %s" % (portal, user["role"]))
                     conn.commit()
-                    if portal == "admin":
-                        raise auth.Unauthorized(
-                            "This is the administrator portal. Invigilators and students sign in from "
-                            "their own portal.")
-                    if portal == "student":
-                        raise auth.Unauthorized(
-                            "This is the student portal. Staff sign in from the administrator or "
-                            "invigilator portal.")
-                    raise auth.Unauthorized(
-                        "This is the invigilator portal. Administrators and students sign in from "
-                        "their own portal.")
+                    raise auth.Unauthorized(_portal_mismatch_message(portal))
                 db.audit(conn, user, "User login (email code)", "user", user["id"],
                          "Portal: %s" % (portal or "default"))
                 conn.commit()
                 return self._send(200, {"token": auth.make_token(user), "user": user})
+
+            if method == "POST" and path == "/api/auth/request-phone-code":
+                body = self._json_body()
+                portal = (body.get("portal") or "").strip().lower()
+                try:
+                    phone = sms.normalize(body.get("phone"))
+                except ValueError as exc:
+                    raise auth.ValidationError(str(exc))
+                if not sms.available():
+                    raise auth.ValidationError(
+                        "Phone sign-in is not switched on for this deployment yet.")
+                user = auth.find_user_by_phone(phone)
+                allowed_roles = PORTAL_ROLES.get(portal)
+                known = bool(user) and (not allowed_roles or user["role"] in allowed_roles)
+                demo_code = None
+                deliver = False
+                if known and not otp.hourly_cap_reached(conn, "phone", phone):
+                    if otp.recent_request_blocked(conn, "phone", phone):
+                        raise auth.ValidationError(
+                            "A code was sent a moment ago. Wait a minute before asking for another.")
+                    code = otp.issue(conn, "phone", phone, portal)
+                    conn.commit()
+                    if sms.ENABLED:
+                        try:
+                            sms.send(phone, "ExamFlow AI sign-in code: %s. It expires in %d minutes. "
+                                            "Do not share it." % (code, otp.CODE_TTL_MINUTES))
+                            deliver = True
+                            db.audit(conn, None, "Sign-in code texted", "user", user["id"], phone)
+                            conn.commit()
+                        except Exception:  # noqa: BLE001
+                            traceback.print_exc()
+                    elif sms.DEMO:
+                        demo_code = code
+                elif not known and portal == "student":
+                    # Students may create their own account from a phone number, so the
+                    # code is issued before an account exists. Staff roles cannot self-serve.
+                    if not otp.recent_request_blocked(conn, "phone", phone):
+                        code = otp.issue(conn, "phone", phone, portal)
+                        conn.commit()
+                        if sms.ENABLED:
+                            try:
+                                sms.send(phone, "ExamFlow AI sign-in code: %s. It expires in %d "
+                                                "minutes. Do not share it."
+                                         % (code, otp.CODE_TTL_MINUTES))
+                                deliver = True
+                            except Exception:  # noqa: BLE001
+                                traceback.print_exc()
+                        elif sms.DEMO:
+                            demo_code = code
+                payload = {"sent": True, "delivered": deliver, "phone": phone,
+                           "expires_in": otp.CODE_TTL_MINUTES * 60}
+                if demo_code:
+                    payload["demo_code"] = demo_code
+                return self._send(200, payload)
+
+            if method == "POST" and path == "/api/auth/verify-phone-code":
+                body = self._json_body()
+                portal = (body.get("portal") or "student").strip().lower()
+                try:
+                    phone = sms.normalize(body.get("phone"))
+                except ValueError as exc:
+                    raise auth.ValidationError(str(exc))
+                ok, reason = otp.confirm(conn, "phone", phone, portal, body.get("code"))
+                conn.commit()
+                if not ok:
+                    raise auth.Unauthorized(reason)
+                user = auth.find_user_by_phone(phone)
+                created = False
+                if not user:
+                    if portal != "student":
+                        raise auth.Unauthorized(
+                            "No ExamFlow account uses that phone number. Ask the examination office "
+                            "to add it.")
+                    user = auth.provision_phone_account(conn, phone, portal, body.get("full_name"))
+                    created = True
+                allowed_roles = PORTAL_ROLES.get(portal)
+                if allowed_roles and user["role"] not in allowed_roles:
+                    db.audit(conn, user, "Blocked sign-in (wrong portal)", "user", user["id"],
+                             "Tried the %s portal by phone as %s" % (portal, user["role"]))
+                    conn.commit()
+                    raise auth.Unauthorized(_portal_mismatch_message(portal))
+                db.audit(conn, user, "User login (phone code)", "user", user["id"],
+                         "Portal: %s · %s" % (portal or "default", sms.display(phone)))
+                conn.commit()
+                return self._send(200, {"token": auth.make_token(user), "user": user,
+                                        "created": created})
 
             if method == "POST" and path == "/api/auth/gmail":
                 body = self._json_body()

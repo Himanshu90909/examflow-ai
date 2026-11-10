@@ -839,6 +839,100 @@
       h('a', { class: 'portal-switch', href: cfg.otherHref, text: cfg.otherText }));
   }
 
+  /* Phone-number sign-in: send a 6 digit code by SMS, then verify it. Students may
+     create their account here; staff portals need a number the office already has. */
+  function buildPhoneFlow(portal, cfg, onDone) {
+    const phone = inputEl({ type: 'tel', placeholder: '90000 00001', autocomplete: 'tel' });
+    const code = inputEl({ type: 'text', placeholder: '6 digit code', autocomplete: 'one-time-code', maxlength: '6' });
+    const note = h('div', { class: 'alert info', style: 'display:none;margin-bottom:12px' });
+    const error = h('div', { class: 'alert err', style: 'display:none' });
+    const sendBtn = h('button', { class: 'btn ghost block', type: 'button', text: 'Text me a sign-in code' });
+    const verifyBtn = h('button', { class: 'btn block', type: 'button', style: 'display:none', text: 'Verify and sign in' });
+    const codeRow = h('div', { style: 'display:none' }, field('Sign-in code', code), verifyBtn);
+    const providers = App.state.providers || {};
+
+    const show = (el, text, kind) => {
+      el.className = 'alert ' + (kind || 'info');
+      el.textContent = text;
+      el.style.display = 'flex';
+    };
+    const hide = (el) => { el.style.display = 'none'; };
+
+    if (providers.phone_demo) {
+      note.className = 'alert warn';
+      note.textContent = 'Demonstration mode: no SMS gateway is configured on this deployment, '
+        + 'so the code is shown here after you ask for it.';
+      note.style.display = 'flex';
+    }
+
+    sendBtn.addEventListener('click', async () => {
+      hide(error);
+      if (!phone.value.trim()) { show(error, 'Enter your phone number.', 'err'); return; }
+      sendBtn.disabled = true;
+      sendBtn.innerHTML = '<span class="spinner"></span> Sending';
+      try {
+        const data = await api('/api/auth/request-phone-code', {
+          method: 'POST',
+          body: { phone: phone.value.trim(), portal: portal },
+        });
+        hide(error);
+        codeRow.style.display = '';
+        code.focus();
+        if (data.demo_code) {
+          show(note, 'Demonstration code for ' + data.phone + ': ' + data.demo_code
+            + '. It expires in 10 minutes.', 'warn');
+        } else if (data.delivered) {
+          show(note, 'If that number belongs to an account here, a 6 digit code is on its way to '
+            + data.phone + '. It expires in 10 minutes.', 'ok');
+        } else {
+          show(note, 'SMS delivery is not configured on this deployment yet.', 'warn');
+        }
+      } catch (err) {
+        show(error, err.message, 'err');
+      } finally {
+        sendBtn.disabled = false;
+        sendBtn.textContent = 'Text me a sign-in code';
+      }
+    });
+
+    verifyBtn.addEventListener('click', async () => {
+      hide(error);
+      const value = code.value.replace(/\D/g, '');
+      if (value.length !== 6) { show(error, 'Enter the 6 digit code from the SMS.', 'err'); return; }
+      verifyBtn.disabled = true;
+      verifyBtn.innerHTML = '<span class="spinner"></span> Verifying';
+      try {
+        const data = await api('/api/auth/verify-phone-code', {
+          method: 'POST',
+          body: { phone: phone.value.trim(), code: value, portal: portal },
+        });
+        App.state.token = data.token;
+        App.state.user = data.user;
+        localStorage.setItem('examflow_token', data.token);
+        await onDone();
+      } catch (err) {
+        show(error, err.message, 'err');
+        verifyBtn.disabled = false;
+        verifyBtn.textContent = 'Verify and sign in';
+      }
+    });
+
+    code.addEventListener('input', () => { code.value = code.value.replace(/\D/g, '').slice(0, 6); });
+    code.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); verifyBtn.click(); } });
+
+    return h('div', { class: 'code-flow' },
+      h('div', { class: 'portal-badge ' + portal, text: cfg.badge + ' portal' }),
+      h('h1', { text: cfg.heading.replace('sign in', 'sign in by phone') }),
+      h('p', { class: 'muted small', style: 'margin-bottom:16px',
+        text: 'We text a one-time code to your number. No password needed.' }),
+      note, error,
+      field('Phone number', phone),
+      h('div', { class: 'small muted', style: 'margin:-6px 0 10px', text: 'Include the country code, e.g. +91 90000 00001.' }),
+      sendBtn,
+      codeRow,
+      h('a', { class: 'portal-switch', href: cfg.otherHref, text: cfg.otherText }));
+  }
+
   function renderPortalLogin(portal, message) {
     const cfg = PORTALS[portal];
     const root = document.getElementById('root');
@@ -873,10 +967,19 @@
             const first = next.querySelector('input');
             if (first) first.focus();
           } })) : null,
+      providers.phone ? h('div', { class: 'mt12', style: 'margin-top:10px' },
+        h('button', { class: 'btn ghost block', type: 'button', text: 'Continue with phone number',
+          onclick: () => {
+            const next = buildPhoneFlow(portal, cfg, async () => { await start(); });
+            form.replaceWith(next);
+            const first = next.querySelector('input');
+            if (first) first.focus();
+          } })) : null,
       passwordOn ? null : h('div', { class: 'alert info', style: 'margin-top:12px',
-        text: providers.otp ? 'Sign in with a one-time code sent to your email.'
-                            : (providers.google ? 'Sign in with your Google account.'
-                                                : 'Sign-in is unavailable until a provider is configured.') }),
+        text: providers.google ? 'Sign in with your Google account or a code sent to your phone.'
+                              : (providers.phone ? 'Sign in with a one-time code sent to your phone.'
+                                                 : (providers.otp ? 'Sign in with a one-time code sent to your email.'
+                                                                  : 'Sign-in is unavailable until a provider is configured.')) }),
       h('a', { class: 'portal-switch', href: cfg.otherHref, text: cfg.otherText }),
       passwordOn ? h('div', { class: 'demo-box' },
         h('div', { style: 'margin-bottom:6px;font-weight:600;color:#334155', text: 'Demonstration accounts' }),

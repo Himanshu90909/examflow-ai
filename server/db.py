@@ -35,13 +35,15 @@ CREATE TABLE IF NOT EXISTS users (
     role TEXT NOT NULL,
     school_id TEXT REFERENCES schools(id) ON DELETE SET NULL,
     department_id TEXT,
+    phone TEXT,
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS login_codes (
     id TEXT PRIMARY KEY,
-    email TEXT NOT NULL,
+    email TEXT NOT NULL DEFAULT '',
+    phone TEXT,
     portal TEXT,
     code_hash TEXT NOT NULL,
     salt TEXT NOT NULL,
@@ -295,7 +297,13 @@ def _ensure_user_columns() -> None:
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
         if "student_group_id" not in columns:
             conn.execute("ALTER TABLE users ADD COLUMN student_group_id TEXT")
-            conn.commit()
+        if "phone" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN phone TEXT")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone)")
+        code_columns = {row["name"] for row in conn.execute("PRAGMA table_info(login_codes)").fetchall()}
+        if "phone" not in code_columns:
+            conn.execute("ALTER TABLE login_codes ADD COLUMN phone TEXT")
+        conn.commit()
     finally:
         conn.close()
 
@@ -314,10 +322,11 @@ def ensure_student_accounts() -> int:
                 continue
             conn.execute(
                 """INSERT INTO users (id, full_name, email, password_hash, role, school_id,
-                                      department_id, student_group_id, is_active, created_at)
-                   VALUES (?,?,?,?,?,?,?,?,1,?)""",
+                                      department_id, student_group_id, phone, is_active, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,1,?)""",
                 (new_id(), names[min(index, 2)], email, auth.hash_password("Student@123"),
-                 "Student", group["school_id"], group["department_id"], group["id"], now_iso()))
+                 "Student", group["school_id"], group["department_id"], group["id"],
+                 "+91" + str(9000000011 + index), now_iso()))
             added += 1
         conn.commit()
     finally:

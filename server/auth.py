@@ -147,6 +147,62 @@ def provision_gmail_account(conn, email, password, portal, full_name=None):
     return find_user(email)
 
 
+def find_user_by_phone(phone: str):
+    """Active user lookup by phone number (E.164). Used by phone code sign-in."""
+    import sms
+
+    try:
+        number = sms.normalize(phone)
+    except ValueError:
+        return None
+    conn = db.connect()
+    row = conn.execute("SELECT * FROM users WHERE phone = ?", (number,)).fetchone()
+    conn.close()
+    if not row or not row["is_active"]:
+        return None
+    user = dict(row)
+    user.pop("password_hash", None)
+    user["is_active"] = True
+    return user
+
+
+def provision_phone_account(conn, phone, portal, full_name=None):
+    """Create a student account on first phone-number sign-in.
+
+    The account has no mailbox of its own, so the email column gets a routing
+    placeholder that the examination office can replace. Staff portals never
+    self-provision: someone has to grant those roles.
+    """
+    import db as _db
+    import sms
+
+    number = sms.normalize(phone)
+    role = "Student"
+    school = conn.execute("SELECT id FROM schools ORDER BY created_at LIMIT 1").fetchone()
+    school_id = school["id"] if school else None
+    digits = number.lstrip("+")
+    placeholder = "phone.%s@students.examflow.local" % digits
+    name = (full_name or "").strip() or "Student %s" % digits[-4:]
+    user_id = "usr_" + secrets.token_hex(8)
+    conn.execute(
+        "INSERT INTO users (id, full_name, email, password_hash, role, school_id, department_id,"
+        " phone, is_active, created_at) VALUES (?,?,?,?,?,?,NULL,?,1,?)",
+        (user_id, name, placeholder, hash_password(secrets.token_hex(16)), role, school_id,
+         number, _db.now_iso()),
+    )
+    group_id = None
+    if school_id:
+        group = conn.execute(
+            "SELECT id FROM student_groups WHERE school_id = ? ORDER BY created_at LIMIT 1",
+            (school_id,),
+        ).fetchone()
+        group_id = group["id"] if group else None
+        if group_id:
+            conn.execute("UPDATE users SET student_group_id = ? WHERE id = ?", (group_id, user_id))
+    conn.commit()
+    return find_user_by_phone(number)
+
+
 def current_user(token: str):
     payload = read_token(token or "")
     if not payload:

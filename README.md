@@ -207,12 +207,44 @@ Authenticated with `Authorization: Bearer <token>` from `POST /api/auth/login`.
 
 Failures use real status codes: `403` (role or school isolation), `404`, `422` (validation), `500`.
 
+### Sign-in options
+
+Four ways in, all issued against the same signed bearer token:
+
+| Route | What it does |
+| --- | --- |
+| POST `/api/auth/login` | Email and password (demo and staff accounts) |
+| GET `/api/auth/google/start?portal=…` → `/api/auth/google/callback` | Google sign-in; a first-time Gmail becomes an account in that portal |
+| POST `/api/auth/request-code` \| `/api/auth/verify-code` | Six-digit code emailed to the address on the account |
+| POST `/api/auth/request-phone-code` \| `/api/auth/verify-phone-code` | Six-digit code texted to a phone number; a new number becomes a **student** account on first use, staff portals only accept numbers already on file |
+
+`GET /api/auth/providers` tells the sign-in page which of the four are configured.
+
+Google needs `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (redirect URI
+`<origin>/api/auth/google/callback`). Email codes need `RESEND_API_KEY` or `SMTP_HOST` +
+`SMTP_USER` + `SMTP_PASSWORD`. Phone codes need a gateway:
+
+```bash
+FAST2SMS_API_KEY=…            # India, quick/bulk route (set EXAMFLOW_FAST2SMS_ROUTE if needed)
+# or
+TWILIO_ACCOUNT_SID=… TWILIO_AUTH_TOKEN=… TWILIO_FROM=+1…
+EXAMFLOW_PHONE_COUNTRY=91     # country code assumed for bare national numbers
+```
+
+Without a gateway, `EXAMFLOW_SMS_DEMO=1` runs a demonstration: the requested code is returned to
+the sign-in page and shown on screen so a reviewer can complete the flow. It is off unless that
+variable is set and it must never be set on a real deployment. Numbers are stored in E.164 form;
+the seeded demonstration accounts use `+91 90000 00001`…`00004` (staff) and
+`…00011`…`00013` (students).
+
 ---
 
 ## 6. Tests
 
 ```bash
-python3 tests/test_engine.py      # 17 engine tests, no dependencies
+python3 tests/test_engine.py         # 17 engine tests, no dependencies
+python3 tests/test_google_signin.py  # 8 Google sign-in / account provisioning tests
+python3 tests/test_phone_signin.py   # 13 phone sign-in tests (numbers, codes, provisioning, throttling)
 ```
 
 Covers the invigilator-per-candidate rule, room capacity rejection, daily duty limits, group-overlap

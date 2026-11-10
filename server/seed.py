@@ -7,6 +7,7 @@ different duty limits.
 """
 import db
 import auth
+import sms
 
 
 def seed_dataset(conn):
@@ -207,17 +208,17 @@ def seed_dataset(conn):
              now))
 
     users = [
-        ("System Administrator", "admin@examflow.ai", "Admin@123", "Super Admin", None, None),
-        ("Rita Sharma", "rita@examflow.ai", "Examflow@123", "School Admin", sids["NIT"], dids["CSE"]),
-        ("Samuel Fernandes", "samuel@examflow.ai", "Examflow@123", "School Admin", sids["RCS"], dids["MAT"]),
-        ("Dr. Ananya Rao", "ananya@examflow.ai", "Examflow@123", "Invigilator", sids["NIT"], dids["CSE"]),
+        ("System Administrator", "admin@examflow.ai", "Admin@123", "Super Admin", None, None, "9000000001"),
+        ("Rita Sharma", "rita@examflow.ai", "Examflow@123", "School Admin", sids["NIT"], dids["CSE"], "9000000002"),
+        ("Samuel Fernandes", "samuel@examflow.ai", "Examflow@123", "School Admin", sids["RCS"], dids["MAT"], "9000000003"),
+        ("Dr. Ananya Rao", "ananya@examflow.ai", "Examflow@123", "Invigilator", sids["NIT"], dids["CSE"], "9000000004"),
     ]
-    for full_name, email, password, role, school_id, dept_id in users:
+    for full_name, email, password, role, school_id, dept_id, phone in users:
         conn.execute(
             """INSERT INTO users (id, full_name, email, password_hash, role, school_id, department_id,
-               is_active, created_at) VALUES (?,?,?,?,?,?,?,?,?)""",
+               phone, is_active, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (db.new_id(), full_name, email, auth.hash_password(password), role, school_id, dept_id,
-             1, now))
+             "+" + sms.COUNTRY_CODE + phone, 1, now))
 
     conn.commit()
     print("Seeded demonstration dataset.")
