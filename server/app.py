@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import db
 import auth
 import api
+import assistant
 import persistence
 import google_auth
 import institution
@@ -590,6 +591,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, api.my_exams(conn, user))
             if method == "POST" and path == "/api/my-duties/report-issue":
                 return self._send(200, api.report_availability_issue(conn, user, self._json_body()))
+
+            if path == "/api/assistant/status":
+                return self._send(200, assistant.status())
+            if method == "POST" and path == "/api/assistant/chat":
+                try:
+                    return self._send(200, assistant.ask(conn, user, self._json_body()))
+                except assistant.AssistantError as exc:
+                    raise auth.ValidationError(str(exc))
 
             if method == "POST" and path == "/api/scheduling/run":
                 body = self._json_body()

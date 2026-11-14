@@ -82,7 +82,7 @@ All schools, faculty and students are fictional demonstration data.
   the branch, course, semester and section they picked at sign-up. Students cannot read any other
   resource; every attempt returns `403`.
 
-**23 modules** — Dashboard · Schools · Departments · Student Groups · Examinations · Examination
+**24 modules** — Dashboard · AI Assistant · Schools · Departments · Student Groups · Examinations · Examination
 Calendar · Rooms Management · Invigilators · Faculty Availability · Time Slots · Constraints &
 Policies · AI Timetable Generator · Generated Timetable · Conflict Management · Fairness Analysis ·
 Algorithm Comparison · My Duties · Reports & Analytics · Notifications · Audit Logs · User Management ·
@@ -231,6 +231,8 @@ Authenticated with `Authorization: Bearer <token>` from `POST /api/auth/login`.
 | GET | `/api/reports/{kind}.csv` | The same report as a CSV download |
 | GET | `/api/my-duties`, POST `/api/my-duties/report-issue` | Invigilator self-service |
 | GET | `/api/my-exams` | A student's own examinations, rooms and seating |
+| GET | `/api/assistant/status` | Which answering engine the assistant is running |
+| POST | `/api/assistant/chat` | The in-app assistant: `{message, history}` in, grounded answer out |
 | GET | `/api/catalog` | **Public**: the seventeen LPU branches, their programmes and semesters, for the student sign-up form |
 
 `resource` is one of `schools`, `departments`, `student-groups`, `examinations`, `rooms`,
@@ -291,7 +293,32 @@ the seeded demonstration accounts use `+91 90000 00001`…`00004` (staff) and
 
 ---
 
-## 6. Tests
+## 6. The assistant
+
+Every signed-in role gets **AI Assistant** in the sidebar: a chat that answers questions in plain
+words about the data the app already holds — *what is scheduled on 12 December*, *which invigilators
+are overloaded*, *when is CSE310*, *why are three papers unscheduled*, *compare CSP and First-Fit*.
+
+Two engines sit behind one endpoint:
+
+* **Grounded lookup (default, no key).** The question is parsed (`assistant.parse_date` understands
+  `2026-12-02`, `2 dec`, `02/12`, `tomorrow`, weekday names) and matched against the live run,
+  then answered from stored rows. Scoped by role: a student asking about rooms is answered with
+  their own papers, an invigilator with their duties, never with institution-wide data.
+* **Language model (optional).** Set `EXAMFLOW_LLM_API_KEY` and the same role-scoped context brief
+  goes to an OpenAI-compatible endpoint (`EXAMFLOW_LLM_BASE`, `EXAMFLOW_LLM_MODEL`); a network or
+  key failure falls back to the grounded answer and says so in the reply (`mode`).
+
+```bash
+EXAMFLOW_LLM_API_KEY=…            # optional; without it nothing leaves the server
+EXAMFLOW_LLM_MODEL=gpt-4o-mini    # any OpenAI-compatible chat model
+EXAMFLOW_LLM_BASE=https://api.openai.com/v1
+```
+
+The assistant never writes: it reads the same rows the pages read, so an answer cannot disagree with
+the timetable. Rate limited to 30 questions a minute per user, 800 characters per question.
+
+## 7. Tests
 
 ```bash
 python3 tests/test_engine.py             # 17 solver, validator, fairness and end-to-end run tests
@@ -303,9 +330,10 @@ python3 tests/test_persistence_status.py  #  4 snapshot persistence and save-fai
 python3 tests/test_sms_delivery.py        #  4 SMS gateway selection and delivery-result tests
 python3 tests/test_stale_session.py       #  4 expired / stale session recovery tests
 python3 tests/test_db_concurrency.py      #  4 concurrent cold-start and write-safety tests
+python3 tests/test_assistant.py          # 15 assistant: dates, intent, role scoping, LLM fallback
 ```
 
-Nine suites, 83 tests, no third-party packages.
+Ten suites, 98 tests, no third-party packages.
 
 Covers the invigilator-per-candidate rule, room capacity rejection, daily duty limits, group-overlap
 and room-clash prevention, infeasibility handling, determinism, the fairness formula, plus end-to-end
@@ -313,7 +341,7 @@ runs asserting that all examinations are scheduled, no hard rule is violated, AI
 soft penalty and workload spread, every assignment has an explanation, and that an injected clash is
 detected, blocks publishing and is repaired.
 
-Browser-side smoke test (renders all 22 routes against the live API through a DOM shim):
+Browser-side smoke test (renders all 23 routes against the live API through a DOM shim):
 
 ```bash
 node tests/smoke_ui.js http://localhost:8000
@@ -321,7 +349,7 @@ node tests/smoke_ui.js http://localhost:8000
 
 ---
 
-## 7. Layout
+## 8. Layout
 
 ```
 examflow-ai/
@@ -340,6 +368,7 @@ examflow-ai/
 │   ├── sms.py                Fast2SMS / Twilio transport for codes
 │   ├── persistence.py        database snapshot and restore
 │   ├── retheme.py            re-cut seeded institution rows in place
+│   ├── assistant.py          the in-app assistant: grounded answers, optional LLM
 │   └── scheduler/            NO database, NO HTTP
 │       ├── constraints.py    Problem, RuleEngine (R1–R8)
 │       ├── csp.py            MRV / degree / LCV / forward checking / backtracking
@@ -349,7 +378,7 @@ examflow-ai/
 ├── static/
 │   ├── index.html
 │   ├── css/styles.css        design system
-│   └── js/{core,pages,scheduling,reports}.js
+│   └── js/{core,pages,scheduling,reports,chat}.js
 └── tests/
     ├── test_engine.py            solver, constraints, conflicts, fairness, end-to-end run
     ├── test_google_signin.py     OAuth state, callback, provisioning
@@ -360,12 +389,13 @@ examflow-ai/
     ├── test_sms_delivery.py      gateway selection and delivery results
     ├── test_stale_session.py     expired session recovery
     ├── test_db_concurrency.py    concurrent cold starts
+    ├── test_assistant.py         assistant intent, dates, role scoping, LLM fallback
     └── smoke_ui.js               renders every route against the live API
 ```
 
 ---
 
-## 8. Design system
+## 9. Design system
 
 Navy sidebar `#0F172A`, primary blue `#2563EB`, background `#F8FAFC`, text `#1E293B`, 14px card
 radius, 1px `#E2E8F0` borders, Inter with a system fallback. Tables stay readable on small screens,
@@ -374,7 +404,7 @@ cleanly.
 
 ---
 
-## 9. Honest limitations
+## 10. Honest limitations
 
 - **No CP-SAT in this build.** OR-Tools is not installed, so results are reported as feasible, never
   optimal. The `Problem → SolveResult` seam is designed so a CP-SAT solver can be dropped in, with
@@ -386,6 +416,9 @@ cleanly.
 - **Sessions are stateless HMAC tokens** with expiry; there is no server-side revocation list, so
   rotating `EXAMFLOW_SECRET` invalidates existing sessions.
 - The database file stores software hashes (PBKDF2-SHA256, 120k iterations), not plaintext passwords.
+- **The assistant has no server-side memory.** The thread lives in the browser tab
+  (`sessionStorage`) and is sent back with each question only as loose history; nothing is stored,
+  and the grounded engine does not need it.
 - Notifications are in-app only. Email and SMS transports exist, but they carry sign-in codes, not
   notification fan-out.
 - **Google sign-in depends on one registered callback.** The OAuth client authorises
@@ -396,7 +429,7 @@ cleanly.
 
 ---
 
-## 10. Deploying to Vercel
+## 11. Deploying to Vercel
 
 The app ships with a Vercel build: `api/index.py` is the serverless entry point and
 `server/wsgi.py` adapts the existing request handler to WSGI, so no routing is duplicated.

@@ -32,6 +32,7 @@
     ['Overview', [
       { id: 'dashboard', label: 'Dashboard', icon: 'dashboard', role: ['Super Admin', 'School Admin', 'Invigilator'] },
       { id: 'my-exams', label: 'My Exams', icon: 'file', role: ['Student'] },
+      { id: 'assistant', label: 'AI Assistant', icon: 'spark', role: ['Super Admin', 'School Admin', 'Invigilator', 'Student'] },
     ]],
     ['Institution', [
       { id: 'schools', label: 'Schools', icon: 'school', role: ['Super Admin'] },
