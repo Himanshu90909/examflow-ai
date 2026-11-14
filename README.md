@@ -70,7 +70,7 @@ All schools, faculty and students are fictional demonstration data.
 
 ## 2. What is inside
 
-**Three roles with enforced isolation**
+**Four roles with enforced isolation**
 
 - **Super Admin** — every school, every record, user management, full audit log.
 - **School Admin** — only their own school's departments, groups, examinations, rooms and faculty.
@@ -78,12 +78,15 @@ All schools, faculty and students are fictional demonstration data.
   schools' rows.
 - **Invigilator** — read-only duty list, own availability, issue reporting. Attempts at scheduling
   actions return `403` from the API, not just a hidden button.
+- **Student** — a read-only *My Exams* list of their own papers with date, room and seating, scoped to
+  the branch, course, semester and section they picked at sign-up. Students cannot read any other
+  resource; every attempt returns `403`.
 
-**20 modules** — Dashboard · Schools · Departments · Student Groups · Examinations · Examination
+**23 modules** — Dashboard · Schools · Departments · Student Groups · Examinations · Examination
 Calendar · Rooms Management · Invigilators · Faculty Availability · Time Slots · Constraints &
 Policies · AI Timetable Generator · Generated Timetable · Conflict Management · Fairness Analysis ·
 Algorithm Comparison · My Duties · Reports & Analytics · Notifications · Audit Logs · User Management ·
-Settings.
+Settings · My Exams (students).
 
 **Generator workflow** — a ten-step run configuration (schools → session → date window →
 examinations → rooms → invigilators → policies → optimisation weights → algorithm → generate). The
@@ -227,6 +230,8 @@ Authenticated with `Authorization: Bearer <token>` from `POST /api/auth/login`.
 | GET | `/api/reports/{kind}` | Report data (`timetable`, `school`, `invigilator`, `room`, `group`, `conflict`, `fairness`, `comparison`, `performance`) |
 | GET | `/api/reports/{kind}.csv` | The same report as a CSV download |
 | GET | `/api/my-duties`, POST `/api/my-duties/report-issue` | Invigilator self-service |
+| GET | `/api/my-exams` | A student's own examinations, rooms and seating |
+| GET | `/api/catalog` | **Public**: the seventeen LPU branches, their programmes and semesters, for the student sign-up form |
 
 `resource` is one of `schools`, `departments`, `student-groups`, `examinations`, `rooms`,
 `invigilators`, `availability`, `time-slots`, `policies`, `users`, `runs`, `conflicts`,
@@ -245,7 +250,9 @@ Four ways in, all issued against the same signed bearer token:
 | POST `/api/auth/request-code` \| `/api/auth/verify-code` | Six-digit code emailed to the address on the account |
 | POST `/api/auth/request-phone-code` \| `/api/auth/verify-phone-code` | Six-digit code texted to a phone number; a new number becomes a **student** account on first use, staff portals only accept numbers already on file |
 
-`GET /api/auth/providers` tells the sign-in page which of the four are configured.
+`GET /api/auth/providers` tells the sign-in page which of the four are configured. On the live demo
+password, Google and phone sign-in are on; the emailed six-digit code is the one still waiting on
+`RESEND_API_KEY` (or SMTP credentials).
 
 Google needs `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (redirect URI
 `<origin>/api/auth/google/callback`). Email codes need `RESEND_API_KEY` or `SMTP_HOST` +
@@ -287,10 +294,18 @@ the seeded demonstration accounts use `+91 90000 00001`…`00004` (staff) and
 ## 6. Tests
 
 ```bash
-python3 tests/test_engine.py         # 17 engine tests, no dependencies
-python3 tests/test_google_signin.py  # 8 Google sign-in / account provisioning tests
-python3 tests/test_phone_signin.py   # 13 phone sign-in tests (numbers, codes, provisioning, throttling)
+python3 tests/test_engine.py             # 17 solver, validator, fairness and end-to-end run tests
+python3 tests/test_google_signin.py      # 16 Google sign-in, state signing and account provisioning
+python3 tests/test_phone_signin.py       # 20 phone sign-in tests (numbers, codes, provisioning, throttling)
+python3 tests/test_enrolment.py          # 10 branch / programme / semester catalogue and sign-up tests
+python3 tests/test_institution.py         #  4 institution identity and retheme tests
+python3 tests/test_persistence_status.py  #  4 snapshot persistence and save-failure reporting tests
+python3 tests/test_sms_delivery.py        #  4 SMS gateway selection and delivery-result tests
+python3 tests/test_stale_session.py       #  4 expired / stale session recovery tests
+python3 tests/test_db_concurrency.py      #  4 concurrent cold-start and write-safety tests
 ```
+
+Nine suites, 83 tests, no third-party packages.
 
 Covers the invigilator-per-candidate rule, room capacity rejection, daily duty limits, group-overlap
 and room-clash prevention, infeasibility handling, determinism, the fairness formula, plus end-to-end
@@ -317,6 +332,14 @@ examflow-ai/
 │   ├── db.py                 schema, connection, JSON helpers, audit
 │   ├── seed.py               demonstration dataset
 │   ├── solver_service.py     orchestration + persistence  ← engine boundary
+│   ├── institution.py        university identity that every page reads
+│   ├── catalog.py            LPU branches, programmes, semesters
+│   ├── google_auth.py        Google OAuth 2.0 sign-in
+│   ├── otp.py                six-digit codes, hashing and throttling
+│   ├── mailer.py             email transport for codes
+│   ├── sms.py                Fast2SMS / Twilio transport for codes
+│   ├── persistence.py        database snapshot and restore
+│   ├── retheme.py            re-cut seeded institution rows in place
 │   └── scheduler/            NO database, NO HTTP
 │       ├── constraints.py    Problem, RuleEngine (R1–R8)
 │       ├── csp.py            MRV / degree / LCV / forward checking / backtracking
@@ -328,8 +351,16 @@ examflow-ai/
 │   ├── css/styles.css        design system
 │   └── js/{core,pages,scheduling,reports}.js
 └── tests/
-    ├── test_engine.py
-    └── smoke_ui.js
+    ├── test_engine.py            solver, constraints, conflicts, fairness, end-to-end run
+    ├── test_google_signin.py     OAuth state, callback, provisioning
+    ├── test_phone_signin.py      phone codes, throttling, provisioning
+    ├── test_enrolment.py         branch / programme / semester catalogue
+    ├── test_institution.py       institution identity, retheme
+    ├── test_persistence_status.py  snapshot persistence, save failures
+    ├── test_sms_delivery.py      gateway selection and delivery results
+    ├── test_stale_session.py     expired session recovery
+    ├── test_db_concurrency.py    concurrent cold starts
+    └── smoke_ui.js               renders every route against the live API
 ```
 
 ---
@@ -355,7 +386,13 @@ cleanly.
 - **Sessions are stateless HMAC tokens** with expiry; there is no server-side revocation list, so
   rotating `EXAMFLOW_SECRET` invalidates existing sessions.
 - The database file stores software hashes (PBKDF2-SHA256, 120k iterations), not plaintext passwords.
-- Notifications are in-app only; no email or SMS transport is wired in.
+- Notifications are in-app only. Email and SMS transports exist, but they carry sign-in codes, not
+  notification fan-out.
+- **Google sign-in depends on one registered callback.** The OAuth client authorises
+  `https://examflow-ai-inky.vercel.app/api/auth/google/callback`; another domain works only after that
+  URI is added to the client, or by pointing `EXAMFLOW_PUBLIC_URL` at an authorised one.
+- **Email codes stay off until credentials exist.** Without `RESEND_API_KEY` (or SMTP) the emailed
+  option is hidden and `GET /api/auth/providers` reports `otp: false`.
 
 ---
 
@@ -383,7 +420,11 @@ with Postgres.
 
 Never commit a real `EXAMFLOW_SECRET`; set it as a Vercel environment variable.
 
-**Live demo:** https://examflow-ai-api.vercel.app (Vercel, SQLite in /tmp, reseeds on cold start)
+**Live demo:** https://examflow-ai-inky.vercel.app (Vercel, SQLite in /tmp, restored from the
+`snapshot` branch of `Himanshu90909/examflow-ai` on cold start, saved back on every write)
+
+The older `examflow-ai-api.vercel.app` link is a pre-LPU build and is no longer the reference
+deployment.
 
 ## Persistence on Vercel
 
@@ -395,7 +436,10 @@ database in this repository as `data/examflow.db.gz`:
 * disable it by clearing `EXAMFLOW_SNAPSHOT_REPO`
 
 Environment variables on Vercel: `EXAMFLOW_SNAPSHOT_REPO`, `EXAMFLOW_GITHUB_TOKEN`,
-`EXAMFLOW_SECRET`, `EXAMFLOW_DB=/tmp/examflow.db`, `EXAMFLOW_GOOGLE_ADMIN_EMAILS`.
+`EXAMFLOW_SECRET`, `EXAMFLOW_DB=/tmp/examflow.db`, `EXAMFLOW_PUBLIC_URL` (the canonical origin the
+Google callback is built from), `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+`EXAMFLOW_GOOGLE_ADMIN_EMAILS`, and for phone codes `FAST2SMS_API_KEY` with `EXAMFLOW_PHONE_COUNTRY`.
+Adding or changing a variable only reaches the running site after a redeploy.
 Treat the snapshot store as demo-grade: two instances writing at the same instant keep
 the last commit. Move to a managed Postgres for real multi-user deployments.
 
